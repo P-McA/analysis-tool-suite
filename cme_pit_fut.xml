@@ -1,0 +1,23 @@
+ <TrdCaptRpt LastUpdateTm="2019-08-12T15:28:34.310-05:00" TxnTm="2019-08-12T15:28:33-05:00"
+         MLegRptTyp="1" BizDt="2019-08-12" TrdDt="2019-08-12" LastPx="130.5" LastQty="15" VenuTyp="P" 
+         PxTyp="2" MtchID="16C81B4741D0003D2CDA" TrdTyp="0" ReqID="123456" TrdRptStat="0" RptTyp="101" TransTyp="2" 
+         TrdID2="16C81B4741D0003D2CD4" TrdID="100071" RptID="16C81B4741D0003D2CD41152833014">
+            <Instrmt PxQteCcy="USD" Desc="10-Year T-Note Futures" Exch="CBT" 
+             SettlMeth="P" UOMQty="100000.0" UOMCcy="USD" UOM="Ccy" Mult="1000" MatDt="2019-09-19" 
+             MMY="201909" SecTyp="FUT" CFI="FFDPSO" Src="H" ID="21" Sym="ZNU9" />
+            <RptSide CustCpcty="1" InptSrc="FIRM" ClOrdID="123" Side="1">
+                <Pty R="1" ID="666" />
+                <Pty R="4" ID="666" />
+                <Pty R="7" Src="C" ID="test_firm1">
+                    <Sub Typ="5" ID="Test Firm 1" />
+                </Pty>
+                <Pty R="12" ID="ANT" />
+                <Pty R="21" Src="C" ID="CME" />
+                <Pty R="22" Src="C" ID="CBT" />
+                <Pty R="24" Src="C" ID="TESTACCT3">
+                    <Sub Typ="26" ID="1" />
+                </Pty>
+                <Pty R="24" Src="H" ID="A-777776" />
+                <RegTrdID Typ="0" Evnt="2" Src="1010000023" ID="FECC16C81B4741D0003D2CD4" />
+            </RptSide>
+ </TrdCaptRpt>

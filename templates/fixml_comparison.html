@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXML Comparison Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 20px;
+            width: 100%;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .drop-zone--over {
+            border-style: solid;
+        }
+        .drop-zone__prompt {
+            color: #999;
+        }
+        .drop-zone__input {
+            display: none;
+        }
+        .vertical-splitter {
+            border-left: 1px solid #ccc;
+            height: 100%;
+        }
+        .diff-view {
+            display: flex;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .diff-column {
+            width: 50%;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .diff-match {
+            background-color: #e6ffe6;
+        }
+        .diff-mismatch {
+            background-color: #ffe6e6;
+        }
+        .diff-only {
+            background-color: #fff0e0;
+        }
+                .under-construction-banner {
+            position: absolute;
+            top: 10px;
+            right: -30px;
+            background-color: #ffc107;
+            color: #000;
+            padding: 5px 30px;
+            font-weight: bold;
+            transform: rotate(45deg);
+            z-index: 1000;
+        }
+        .tab-container {
+            position: relative;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">FIXML Comparison Tool</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="drop-zone">
+                        <span class="drop-zone__prompt">Drop first FIXML file here or click to upload</span>
+                        <input type="file" name="file1" class="drop-zone__input" id="file1" accept=".xml">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="drop-zone">
+                        <span class="drop-zone__prompt">Drop second FIXML file here or click to upload</span>
+                        <input type="file" name="file2" class="drop-zone__input" id="file2" accept=".xml">
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Compare</button>
+        </form>
+         <div id="results" class="mt-5" style="display: none;">
+            <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="differences-tab" data-bs-toggle="tab" data-bs-target="#differences" type="button" role="tab" aria-controls="differences" aria-selected="true">Output Field Differences</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="values-tab" data-bs-toggle="tab" data-bs-target="#values" type="button" role="tab" aria-controls="values" aria-selected="false">Fields with Different Values</button>
+                </li>
+                <li class="nav-item tab-container" role="presentation">
+                    <div class="under-construction-banner">Under Construction</div>
+                    <button class="nav-link" id="side-by-side-tab" data-bs-toggle="tab" data-bs-target="#side-by-side" type="button" role="tab" aria-controls="side-by-side" aria-selected="false">Side-by-Side Comparison</button>
+                </li>
+            </ul>
+            <div class="tab-content" id="resultTabsContent">
+                <div class="tab-pane fade show active" id="differences" role="tabpanel" aria-labelledby="differences-tab">
+                    <div class="row">
+                        <div class="col-md-6" id="only-in-1"></div>
+                        <div class="col-md-6" id="only-in-2"></div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="values" role="tabpanel" aria-labelledby="values-tab"></div>
+                <div class="tab-pane fade" id="side-by-side" role="tabpanel" aria-labelledby="side-by-side-tab">
+                    <div class="alert alert-warning mt-3">
+                        <strong>Work in Progress:</strong>
+                    </div>
+                    <div class="diff-view">
+                        <div id="xml1" class="diff-column"></div>
+                        <div id="xml2" class="diff-column"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // Prevent default drag behaviors
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, preventDefaults, false);
+                document.querySelectorAll('.drop-zone').forEach(dropZone => {
+                    dropZone.addEventListener(eventName, preventDefaults, false);
+                });
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            // Highlight drop area when item is dragged over it
+            ['dragenter', 'dragover'].forEach(eventName => {
+                document.querySelectorAll('.drop-zone').forEach(dropZone => {
+                    dropZone.addEventListener(eventName, highlight, false);
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                document.querySelectorAll('.drop-zone').forEach(dropZone => {
+                    dropZone.addEventListener(eventName, unhighlight, false);
+                });
+            });
+
+            function highlight(e) {
+                e.target.closest('.drop-zone').classList.add('drop-zone--over');
+            }
+
+            function unhighlight(e) {
+                e.target.closest('.drop-zone').classList.remove('drop-zone--over');
+            }
+
+            // Handle dropped files
+            document.querySelectorAll('.drop-zone').forEach(dropZone => {
+                dropZone.addEventListener('drop', handleDrop, false);
+            });
+
+            function handleDrop(e) {
+                let dt = e.dataTransfer;
+                let files = dt.files;
+                let inputElement = e.target.closest('.drop-zone').querySelector('.drop-zone__input');
+
+                inputElement.files = files;
+                updateDropZoneFile(e.target.closest('.drop-zone'), files[0]);
+            }
+
+            // Handle file selection
+            document.querySelectorAll(".drop-zone__input").forEach(inputElement => {
+                const dropZoneElement = inputElement.closest(".drop-zone");
+
+                dropZoneElement.addEventListener("click", e => {
+                    inputElement.click();
+                });
+
+                inputElement.addEventListener("change", e => {
+                    if (inputElement.files.length) {
+                        updateDropZoneFile(dropZoneElement, inputElement.files[0]);
+                    }
+                });
+            });
+
+            function updateDropZoneFile(dropZoneElement, file) {
+                let promptElement = dropZoneElement.querySelector(".drop-zone__prompt");
+                if (dropZoneElement.querySelector(".drop-zone__thumb")) {
+                    dropZoneElement.querySelector(".drop-zone__thumb").remove();
+                }
+                promptElement.textContent = file.name;
+            }
+
+            $('#uploadForm').submit(function(e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+
+                console.log("Form submitted");  // Debug log
+
+                $.ajax({
+                    url: '/compare',
+                    type: 'POST',
+                    data: formData,
+                    success: function(data) {
+                        console.log("Received response:", data);  // Debug log
+                        displayResults(data);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("AJAX error:", textStatus, errorThrown);  // Debug log
+                        alert("An error occurred while comparing the files. Please check the console for more information.");
+                    },
+                    cache: false,
+                    contentType: false,
+                    processData: false
+                });
+            });
+
+            function displayResults(data) {
+                console.log("Displaying results");  // Debug log
+
+                // Output Field Differences
+                var only1Html = '<h3>Fields in ' + data.file1_name + ' Only</h3>';
+                only1Html += '<ul>' + data.only_in_1.map(field => '<li>' + formatField(field) + '</li>').join('') + '</ul>';
+                $('#only-in-1').html(only1Html);
+
+                var only2Html = '<h3>Fields in ' + data.file2_name + ' Only</h3>';
+                only2Html += '<ul>' + data.only_in_2.map(field => '<li>' + formatField(field) + '</li>').join('') + '</ul>';
+                $('#only-in-2').html(only2Html);
+
+                // Fields with Different Values
+                var diffValuesHtml = '<h3>Fields with Different Values</h3>';
+                diffValuesHtml += '<table class="table table-striped">';
+                diffValuesHtml += '<thead><tr><th>Field</th><th>' + data.file1_name + ' Value</th><th>' + data.file2_name + ' Value</th></tr></thead>';
+                diffValuesHtml += '<tbody>';
+                data.different_values.forEach(function(item) {
+                    diffValuesHtml += '<tr>';
+                    diffValuesHtml += '<td>' + formatField(item.field) + '</td>';
+                    diffValuesHtml += '<td>' + item.value1 + '</td>';
+                    diffValuesHtml += '<td>' + item.value2 + '</td>';
+                    diffValuesHtml += '</tr>';
+                });
+                diffValuesHtml += '</tbody></table>';
+                $('#values').html(diffValuesHtml);
+
+                // Side-by-Side Comparison
+                displaySideBySide(data.diff, data.xml1, data.xml2);
+
+                $('#results').show();
+                console.log("Results displayed");  // Debug log
+            }
+
+            function formatField(field) {
+                if (field.includes('/Pty[R=')) {
+                    let parts = field.split('/');
+                    let ptyPart = parts[parts.length - 1];
+                    let role = ptyPart.match(/R=(\d+)/)[1];
+                    return 'R="' + role + '" ' + ptyPart.split(']')[1].slice(1);
+                } else {
+                    // Keep the full path on one line
+                    return field;
+                }
+            }
+
+            function displaySideBySide(diff, xml1, xml2) {
+                let html1 = '';
+                let html2 = '';
+                let lines1 = xml1.split('\n');
+                let lines2 = xml2.split('\n');
+                let i1 = 0;
+                let i2 = 0;
+
+                diff.forEach(line => {
+                    if (line.startsWith('  ')) {
+                        html1 += `<div class="diff-match">${escapeHtml(lines1[i1])}</div>`;
+                        html2 += `<div class="diff-match">${escapeHtml(lines2[i2])}</div>`;
+                        i1++;
+                        i2++;
+                    } else if (line.startsWith('- ')) {
+                        html1 += `<div class="diff-only">${escapeHtml(lines1[i1])}</div>`;
+                        i1++;
+                    } else if (line.startsWith('+ ')) {
+                        html2 += `<div class="diff-only">${escapeHtml(lines2[i2])}</div>`;
+                        i2++;
+                    }
+                });
+
+                $('#xml1').html(html1);
+                $('#xml2').html(html2);
+
+                // Highlight matching fields with different positions
+                highlightMatchingFields();
+            }
+
+            function highlightMatchingFields() {
+                let lines1 = $('#xml1 div');
+                let lines2 = $('#xml2 div');
+
+                for (let i = 0; i < lines1.length; i++) {
+                    let line1 = $(lines1[i]);
+                    if (line1.hasClass('diff-only')) {
+                        let field = extractField(line1.text());
+                        if (field) {
+                            let matchingLine = findMatchingField(lines2, field);
+                            if (matchingLine) {
+                                line1.removeClass('diff-only').addClass('diff-match');
+                                matchingLine.removeClass('diff-only').addClass('diff-match');
+                            }
+                        }
+                    }
+                }
+            }
+
+            function extractField(line) {
+                let match = line.match(/(\w+)=/);
+                return match ? match[1] : null;
+            }
+
+            function findMatchingField(lines, field) {
+                for (let i = 0; i < lines.length; i++) {
+                    let line = $(lines[i]);
+                    if (line.hasClass('diff-only') && line.text().includes(field + '=')) {
+                        return line;
+                    }
+                }
+                return null;
+            }
+
+            function escapeHtml(unsafe) {
+                return unsafe
+                     .replace(/&/g, "&amp;")
+                     .replace(/</g, "&lt;")
+                     .replace(/>/g, "&gt;")
+                     .replace(/"/g, "&quot;")
+                     .replace(/'/g, "&#039;");
+            }
+        });
+    </script>
+</body>
+</html>

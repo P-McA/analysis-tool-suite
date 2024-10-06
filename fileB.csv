@@ -1,0 +1,5 @@
+ID,Presence,Values
+Field1, ALWAYS, YES NO,
+Field2, CONDITIONAL,,
+FIELD3, OPTIONAL,Y N Y,
+Filed4, ALWAYS,,

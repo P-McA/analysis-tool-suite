@@ -1,0 +1,22 @@
+        <TrdCaptRpt MDTrdEntrID = "1118445" Clrd = "1" LastUpdateTm = "2019-12-23T20:16:25.911000000Z" TxnTm = "2019-12-23T20:16:25.000000000Z" MLegRptTyp = "2" BizDt = "2019-12-23" TrdDt = "2019-12-23" LastPx = "60.25" LastQty = "5" VenuTyp = "E" PxTyp = "2" ExecID = "80609:M:51533TN0000019" MtchID = "16F2ED1284E0004D1D44F8" TrdSubTyp = "7" TrdTyp = "0" ReqID = "1POST1" TrdRptStat = "0" RptTyp = "101" TransTyp = "0" TrdID2 = "16F2ED1284E0004D1D44FE" TrdID = "106789" RptID = "16F2ED1284E0004D1D44FC1141625493">
+            <Instrmt PxQteCcy = "USD" Desc = "Light Sweet Crude Oil Futures" Exch = "NYMEX" SettlMeth = "P" UOMQty = "1000.0" UOM = "Bbl" Mult = "1000" MatDt = "2020-02-20" MMY = "202003" SubTyp = "CAL" SecTyp = "FUT" CFI = "FCEPSX" Src = "H" ID = "CL" Sym = "CLH0"></Instrmt>
+            <RptSide OrdID = "801037839207" CustOrdHdlInst = "Y" StrategyLinkID = "8010378392072019122319" CustCpcty = "4" InptSrc = "GLBX" ClOrdID = "605030" Side = "2">
+                <Pty R = "1" Src = "D" ID = "666"></Pty>
+                <Pty R = "4" ID = "666"></Pty>
+                <Pty R = "7" Src = "C" ID = "ABC123_BROTHERS_ARBITRAGE">
+                    <Sub Typ = "5" ID = "ABC123 Brothers Arbitrage"></Sub>
+                </Pty>
+                <Pty R = "12" ID = "6F6L"></Pty>
+                <Pty R = "21" Src = "C" ID = "CME"></Pty>
+                <Pty R = "22" Src = "C" ID = "NYMEX"></Pty>
+                <Pty R = "24" Src = "C" ID = "ABC1236">
+                    <Sub Typ = "26" ID = "1"></Sub>
+                </Pty>
+               <Pty R = "24" Src = "H" ID = "A-56969"></Pty>
+                <Pty R = "44" ID = "CME_CMEDCSETUSER3"></Pty>
+                <Pty R = "55" ID = "R37666"></Pty>
+                <Pty R = "1001" Src = "D" ID = "666"></Pty>
+                <RegTrdID Typ = "0" Evnt = "2" Src = "1010000023" ID = "FECC16F2ED1284E0004D1D44FE"></RegTrdID>
+                <TrdRegTS Typ = "1" TS = "2019-12-23T20:16:25.000000000Z"></TrdRegTS>
+            </RptSide>
+        </TrdCaptRpt>
