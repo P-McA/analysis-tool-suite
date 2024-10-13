@@ -56,16 +56,8 @@ def extract_fields(element, prefix=''):
     fields = {}
     tag = element.tag.split('}')[-1]  # Remove namespace if present
     new_prefix = f"{prefix}/{tag}" if prefix else tag
-
-    if tag == 'Pty':
-        role = element.attrib.get('R', '')
-        pty_key = f"{new_prefix}[R={role}]"
-        pty_value = ' '.join([f"{k}=\"{v}\"" for k, v in element.attrib.items() if k != 'R'])
-        fields[pty_key] = pty_value
-    else:
-        for attr, value in element.attrib.items():
-            fields[f"{new_prefix}/@{attr}"] = value
-
+    for attr, value in element.attrib.items():
+        fields[f"{new_prefix}/@{attr}"] = value
     for child in element:
         fields.update(extract_fields(child, new_prefix))
     return fields
@@ -95,13 +87,17 @@ def generate_diff(xml_string1, xml_string2):
 
     return diff
 
+
 @app.route('/')
 def home():
     return render_template('index.html')
 
+
 @app.route('/fixml_comparison')
 def fixml_comparison():
     return render_template('fixml_comparison.html')
+
+
 @app.route('/compare', methods=['POST'])
 def compare():
     app.logger.debug("Comparison request received")
@@ -144,6 +140,19 @@ def compare():
     return jsonify(result)
 
 
+@app.route('/filter_unique_values', methods=['POST'])
+def filter_unique_values():
+    data = request.json
+    different_values = data['different_values']
+
+    # Fields to remove when "Remove Unique Values" is selected
+    unique_fields = ['TrdCaptRpt/@TrdID', 'TrdCaptRpt/@TrdID2', 'TrdCaptRpt/@RptID', 'TrdCaptRpt/@MtchId',  'TrdCaptRpt/@LastUpdateTm', 'TrdCaptRpt/@TxnTm', 'TrdCaptRpt/@BizDt',
+                     'TrdCaptRpt/@TrdDt', ]
+
+    filtered_values = [item for item in different_values if item['field'] not in unique_fields]
+
+    return jsonify(filtered_values)
+
 @app.route('/cdo_comparison')
 def cdo_comparison():
     return render_template('cdo_comparison.html')
@@ -170,8 +179,18 @@ def compare_cdo():
     df2 = get_dataframe('file2', 'csvTextB')
     selected_columns = request.form.getlist('columns[]')
 
-    matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2,
-                                                                                                   selected_columns)
+    if df1.empty or df2.empty:
+        return jsonify({
+            'error': 'One or both of the data sources are empty. Please ensure both sources contain valid data.'
+        }), 400
+
+    try:
+        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2, selected_columns)
+    except Exception as e:
+        app.logger.error(f"Error in compare_dataframes: {str(e)}")
+        return jsonify({
+            'error': 'An error occurred while comparing the dataframes. Please check your data and try again.'
+        }), 500
 
     return jsonify({
         'matched_values': matched_values,
@@ -189,13 +208,18 @@ def get_dataframe(file_key, text_key):
     else:
         return pd.DataFrame()
 
-
 def compare_dataframes(df1, df2, columns):
     matched_values = []
     mismatched_values = []
     only_in_a = []
     only_in_b = []
     duplicate_fields = defaultdict(int)
+
+    if df1.empty or df2.empty:
+        raise ValueError("One or both dataframes are empty")
+
+    if len(df1.columns) == 0 or len(df2.columns) == 0:
+        raise ValueError("One or both dataframes have no columns")
 
     cdo_field = df1.columns[0]  # Assume the first column is always the CDO field
 
