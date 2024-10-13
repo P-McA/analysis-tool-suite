@@ -256,6 +256,12 @@
             });
 
             function displayComparisonResults(data, selectedColumns) {
+                // Sort the data alphabetically by CDO_Field
+                data.matched_values.sort((a, b) => a.CDO_Field.localeCompare(b.CDO_Field));
+                data.mismatched_values.sort((a, b) => a.CDO_Field.localeCompare(b.CDO_Field));
+                data.only_in_a.sort((a, b) => a.localeCompare(b));
+                data.only_in_b.sort((a, b) => a.localeCompare(b));
+
                 // Matched Values
                 var matchedHtml = '<h4>Matched Values</h4>';
                 if (Object.keys(data.duplicate_fields).length > 0) {
