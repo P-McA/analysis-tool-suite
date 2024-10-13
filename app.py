@@ -157,27 +157,33 @@ def filter_unique_values():
 def cdo_comparison():
     return render_template('cdo_comparison.html')
 
-
 @app.route('/upload_cdo', methods=['POST'])
 def upload_cdo():
-    df1 = get_dataframe('file1', 'csvTextA')
-    df2 = get_dataframe('file2', 'csvTextB')
+    df1, file1_name = get_dataframe('file1', 'csvTextA', 'File A')
+    df2, file2_name = get_dataframe('file2', 'csvTextB', 'File B')
+
+    if df1.empty or df2.empty:
+        return jsonify({'error': 'One or both data sources are empty'}), 400
 
     # Get all columns except the first one (CDO field), preserving order
     columns = list(df1.columns[1:])
 
     return jsonify({
         'columns': columns,
-        'file1_name': request.files.get('file1').filename if request.files.get('file1') else 'Pasted Data A',
-        'file2_name': request.files.get('file2').filename if request.files.get('file2') else 'Pasted Data B'
+        'file1_name': file1_name,
+        'file2_name': file2_name
     })
-
 
 @app.route('/compare_cdo', methods=['POST'])
 def compare_cdo():
-    df1 = get_dataframe('file1', 'csvTextA')
-    df2 = get_dataframe('file2', 'csvTextB')
-    selected_columns = request.form.getlist('columns[]')
+    df1, file1_name = get_dataframe('file1', 'csvTextA', 'File A')
+    df2, file2_name = get_dataframe('file2', 'csvTextB', 'File B')
+    selected_columns = request.form.get('columns')
+
+    if selected_columns:
+        selected_columns = json.loads(selected_columns)
+    else:
+        selected_columns = list(df1.columns[1:])  # All columns except the first (CDO field)
 
     if df1.empty or df2.empty:
         return jsonify({
@@ -185,8 +191,7 @@ def compare_cdo():
         }), 400
 
     try:
-        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2,
-                                                                                                       selected_columns)
+        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2, selected_columns)
 
         # Sort the results alphabetically
         matched_values.sort(key=lambda x: x['CDO_Field'])
@@ -205,16 +210,19 @@ def compare_cdo():
         'mismatched_values': mismatched_values,
         'only_in_a': only_in_a,
         'only_in_b': only_in_b,
-        'duplicate_fields': duplicate_fields
+        'duplicate_fields': duplicate_fields,
+        'file1_name': file1_name,
+        'file2_name': file2_name
     })
 
-def get_dataframe(file_key, text_key):
+def get_dataframe(file_key, text_key, default_name):
     if file_key in request.files and request.files[file_key].filename != '':
-        return pd.read_csv(request.files[file_key], keep_default_na=False)
+        file = request.files[file_key]
+        return pd.read_csv(file, keep_default_na=False), file.filename
     elif text_key in request.form and request.form[text_key].strip() != '':
-        return pd.read_csv(io.StringIO(request.form[text_key]), keep_default_na=False)
+        return pd.read_csv(io.StringIO(request.form[text_key]), keep_default_na=False), default_name
     else:
-        return pd.DataFrame()
+        return pd.DataFrame(), default_name
 
 def compare_dataframes(df1, df2, columns):
     matched_values = []
