@@ -185,7 +185,15 @@ def compare_cdo():
         }), 400
 
     try:
-        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2, selected_columns)
+        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2,
+                                                                                                       selected_columns)
+
+        # Sort the results alphabetically
+        matched_values.sort(key=lambda x: x['CDO_Field'])
+        mismatched_values.sort(key=lambda x: x['CDO_Field'])
+        only_in_a.sort()
+        only_in_b.sort()
+
     except Exception as e:
         app.logger.error(f"Error in compare_dataframes: {str(e)}")
         return jsonify({
