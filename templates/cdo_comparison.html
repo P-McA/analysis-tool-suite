@@ -3,104 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CDO Comparison Tool - CME Group</title>
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>CDO Comparison Tool</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        :root {
-            --cme-blue: #0E3E7E;
-            --cme-light-blue: #4C8FD2;
-            --cme-orange: #F47B20;
-            --cme-light-gray: #F4F4F4;
-        }
-        body {
-            font-family: 'Open Sans', sans-serif;
-            background-color: var(--cme-light-gray);
-            color: #333;
-        }
-        .navbar {
-            background-color: var(--cme-blue);
-            padding: 1rem 0;
-        }
-        .navbar-brand img {
-            height: 40px;
-        }
-        h1, h2, h3, h4, h5 {
-            color: var(--cme-blue);
-        }
-        .btn-primary {
-            background-color: var(--cme-orange);
-            border-color: var(--cme-orange);
-        }
-        .btn-primary:hover {
-            background-color: #d86b1c;
-            border-color: #d86b1c;
-        }
         .drop-zone {
-            border: 2px dashed var(--cme-light-blue);
-            border-radius: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 20px;
             width: 100%;
             padding: 20px;
             text-align: center;
             cursor: pointer;
-            background-color: white;
         }
         .drop-zone--over {
             border-style: solid;
         }
-        .drop-zone__prompt {
-            color: var(--cme-blue);
-        }
         .drop-zone__input {
             display: none;
-        }
-        .csv-textarea {
-            width: 100%;
-            height: 200px;
-            margin-top: 10px;
-            border: 1px solid var(--cme-light-blue);
-            border-radius: 5px;
-        }
-        #comparisonResults {
-            background-color: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-        #columnSelection {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .column-checkbox {
-            display: inline-block;
-            margin-right: 15px;
-        }
-        #comparisonResults table {
-            width: 100%;
-            margin-top: 20px;
-        }
-        #comparisonResults th, #comparisonResults td {
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-        #comparisonResults th {
-            background-color: var(--cme-light-blue);
-            color: white;
-        }
-        #newComparisonBtn {
-            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark">
-        <div class="container">
-            <a class="navbar-brand" href="#">
-            </a>
-        </div>
-    </nav>
-
     <div class="container mt-5">
         <h1 class="mb-4">CDO Comparison Tool</h1>
         <div id="inputSection">
@@ -112,7 +34,7 @@
                             <span class="drop-zone__prompt">Drop first CSV file here or click to upload</span>
                             <input type="file" name="file1" class="drop-zone__input" id="file1" accept=".csv">
                         </div>
-                        <textarea class="csv-textarea" id="csvTextA" placeholder="Or paste CSV data here"></textarea>
+                        <textarea class="form-control mt-3" id="csvTextA" rows="5" placeholder="Or paste CSV data here"></textarea>
                     </div>
                     <div class="col-md-6">
                         <h4>Source B</h4>
@@ -120,224 +42,244 @@
                             <span class="drop-zone__prompt">Drop second CSV file here or click to upload</span>
                             <input type="file" name="file2" class="drop-zone__input" id="file2" accept=".csv">
                         </div>
-                        <textarea class="csv-textarea" id="csvTextB" placeholder="Or paste CSV data here"></textarea>
+                        <textarea class="form-control mt-3" id="csvTextB" rows="5" placeholder="Or paste CSV data here"></textarea>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary">Compare Data</button>
             </form>
         </div>
-            <div id="columnSelection" class="mt-4" style="display: none;">
-                <h3>Select Columns to Compare</h3>
-                <div id="columnCheckboxes"></div>
-                <button id="compareBtn" class="btn btn-primary mt-3">Compare Selected Columns</button>
+        <div id="columnSelection" class="mt-4" style="display: none;">
+            <h3>Select Columns to Compare</h3>
+            <div id="columnCheckboxes"></div>
+            <button id="compareBtn" class="btn btn-primary mt-3">Compare Selected Columns</button>
+        </div>
+        <div id="resultsSection" class="mt-4" style="display: none;">
+            <h3>Comparison Results</h3>
+            <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="matched-tab" data-bs-toggle="tab" data-bs-target="#matched" type="button" role="tab" aria-controls="matched" aria-selected="true">Matched Values</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="mismatched-tab" data-bs-toggle="tab" data-bs-target="#mismatched" type="button" role="tab" aria-controls="mismatched" aria-selected="false">Mismatched Values</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="one-source-tab" data-bs-toggle="tab" data-bs-target="#one-source" type="button" role="tab" aria-controls="one-source" aria-selected="false">Fields Present in Only One Source</button>
+                </li>
+            </ul>
+            <div class="tab-content" id="resultTabsContent">
+                <div class="tab-pane fade show active" id="matched" role="tabpanel" aria-labelledby="matched-tab"></div>
+                <div class="tab-pane fade" id="mismatched" role="tabpanel" aria-labelledby="mismatched-tab"></div>
+                <div class="tab-pane fade" id="one-source" role="tabpanel" aria-labelledby="one-source-tab"></div>
             </div>
+            <button id="newComparisonBtn" class="btn btn-secondary mt-3">Run New Comparison</button>
         </div>
-
-            <div id="resultsSection" style="display: none;">
-        <h3>Comparison Results</h3>
-        <ul class="nav nav-tabs" id="resultTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="matched-tab" data-bs-toggle="tab" data-bs-target="#matched" type="button" role="tab" aria-controls="matched" aria-selected="true">Matched Values</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="mismatched-tab" data-bs-toggle="tab" data-bs-target="#mismatched" type="button" role="tab" aria-controls="mismatched" aria-selected="false">Mismatched Values</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="one-source-tab" data-bs-toggle="tab" data-bs-target="#one-source" type="button" role="tab" aria-controls="one-source" aria-selected="false">Fields Present in Only One Source</button>
-            </li>
-        </ul>
-        <div class="tab-content" id="resultTabsContent">
-            <div class="tab-pane fade show active" id="matched" role="tabpanel" aria-labelledby="matched-tab"></div>
-            <div class="tab-pane fade" id="mismatched" role="tabpanel" aria-labelledby="mismatched-tab"></div>
-            <div class="tab-pane fade" id="one-source" role="tabpanel" aria-labelledby="one-source-tab"></div>
-        </div>
-        <button id="newComparisonBtn" class="btn btn-secondary mt-3">Run New Comparison</button>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        $(document).ready(function() {
-            // Initialize Bootstrap tabs
-            var tabEl = document.querySelector('button[data-bs-toggle="tab"]')
-            tabEl.addEventListener('shown.bs.tab', function (event) {
-                event.target // newly activated tab
-                event.relatedTarget // previous active tab
-            })
-                dropZoneElement.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    dropZoneElement.classList.add('drop-zone--over');
-                });
+        document.querySelectorAll(".drop-zone__input").forEach((inputElement) => {
+            const dropZoneElement = inputElement.closest(".drop-zone");
 
-                ['dragleave', 'dragend'].forEach(type => {
-                    dropZoneElement.addEventListener(type, (e) => {
-                        dropZoneElement.classList.remove('drop-zone--over');
-                    });
-                });
-
-                dropZoneElement.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if (e.dataTransfer.files.length) {
-                        inputElement.files = e.dataTransfer.files;
-                        updateDropZoneFile(dropZoneElement, e.dataTransfer.files[0]);
-                    }
-                    dropZoneElement.classList.remove('drop-zone--over');
-                });
+            dropZoneElement.addEventListener("click", (e) => {
+                inputElement.click();
             });
 
-            function updateDropZoneFile(dropZoneElement, file) {
-                let promptElement = dropZoneElement.querySelector('.drop-zone__prompt');
-                promptElement.textContent = file.name;
-            }
+            inputElement.addEventListener("change", (e) => {
+                if (inputElement.files.length) {
+                    updateDropZoneFile(dropZoneElement, inputElement.files[0]);
+                }
+            });
 
-            // File upload and column selection
-            $('#uploadForm').submit(function(e) {
+            dropZoneElement.addEventListener("dragover", (e) => {
                 e.preventDefault();
-                var formData = new FormData(this);
+                dropZoneElement.classList.add("drop-zone--over");
+            });
 
-                // Add pasted CSV data to formData
-                formData.append('csvTextA', $('#csvTextA').val());
-                formData.append('csvTextB', $('#csvTextB').val());
-
-                $.ajax({
-                    url: '/upload_cdo',
-                    type: 'POST',
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    success: function(data) {
-                        displayColumnSelection(data.columns);
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        console.error("Upload error:", textStatus, errorThrown);
-                        alert("An error occurred while processing the data.");
-                    }
+            ["dragleave", "dragend"].forEach((type) => {
+                dropZoneElement.addEventListener(type, (e) => {
+                    dropZoneElement.classList.remove("drop-zone--over");
                 });
             });
 
-             function displayColumnSelection(columns) {
-                var checkboxesHtml = columns.map(col =>
-                    `<div class="column-checkbox">
-                        <input class="form-check-input" type="checkbox" value="${col}" id="check_${col}" checked>
-                        <label class="form-check-label" for="check_${col}">${col}</label>
-                    </div>`
-                ).join('');
+            dropZoneElement.addEventListener("drop", (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length) {
+                    inputElement.files = e.dataTransfer.files;
+                    updateDropZoneFile(dropZoneElement, e.dataTransfer.files[0]);
+                }
+                dropZoneElement.classList.remove("drop-zone--over");
+            });
+        });
 
-                $('#columnCheckboxes').html(checkboxesHtml);
-                $('#columnSelection').show();
+        function updateDropZoneFile(dropZoneElement, file) {
+            let promptElement = dropZoneElement.querySelector(".drop-zone__prompt");
+            if (dropZoneElement.querySelector(".drop-zone__thumb")) {
+                dropZoneElement.querySelector(".drop-zone__thumb").remove();
             }
+            promptElement.textContent = file.name;
+        }
+        let file1Name = 'File A';
+        let file2Name = 'File B';
 
-            $('#compareBtn').click(function() {
-                var selectedColumns = $('#columnCheckboxes input:checked').map(function() {
-                    return $(this).val();
-                }).get();
+        $('#uploadForm').submit(function(e) {
+            e.preventDefault();
+            var formData = new FormData(this);
+            formData.append('csvTextA', $('#csvTextA').val());
+            formData.append('csvTextB', $('#csvTextB').val());
 
-                var formData = new FormData($('#uploadForm')[0]);
-                formData.append('columns[]', selectedColumns);
-                formData.append('csvTextA', $('#csvTextA').val());
-                formData.append('csvTextB', $('#csvTextB').val());
+            $.ajax({
+                url: '/upload_cdo',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(data) {
+                    file1Name = data.file1_name;
+                    file2Name = data.file2_name;
+                    displayColumnSelection(data.columns);
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.error("Upload error:", textStatus, errorThrown);
+                    alert("An error occurred while processing the data.");
+                }
+            });
+        });
 
-                $.ajax({
-                    url: '/compare_cdo',
-                    type: 'POST',
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    success: function(data) {
-                        displayComparisonResults(data, selectedColumns);
-                        $('#inputSection').hide();
-                        $('#resultsSection').show();
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        console.error("Comparison error:", textStatus, errorThrown);
-                        alert("An error occurred while comparing the data.");
+        function displayColumnSelection(columns) {
+            var checkboxesHtml = columns.map(col =>
+                `<div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" value="${col}" id="check_${col}" checked>
+                    <label class="form-check-label" for="check_${col}">${col}</label>
+                </div>`
+            ).join('');
+
+            $('#columnCheckboxes').html(checkboxesHtml);
+            $('#columnSelection').show();
+            $('#inputSection').hide();
+        }
+
+        $('#compareBtn').click(function() {
+            var selectedColumns = $('#columnCheckboxes input:checked').map(function() {
+                return $(this).val();
+            }).get();
+
+            var formData = new FormData($('#uploadForm')[0]);
+            formData.append('columns', JSON.stringify(selectedColumns));
+
+            $.ajax({
+                url: '/compare_cdo',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(data) {
+                    displayComparisonResults(data);
+                    $('#columnSelection').hide();
+                    $('#resultsSection').show();
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.error("Comparison error:", textStatus, errorThrown);
+                    alert("An error occurred while comparing the data.");
+                }
+            });
+        });
+
+        function displayComparisonResults(data) {
+            // Matched Values
+            var matchedHtml = '<h4>Matched Values</h4>';
+            matchedHtml += generateTable(data.matched_values, data.file1_name, data.file2_name);
+            $('#matched').html(matchedHtml);
+
+            // Mismatched Values
+            var mismatchedHtml = '<h4>Mismatched Values</h4>';
+            mismatchedHtml += generateTable(data.mismatched_values, data.file1_name, data.file2_name, true);
+            $('#mismatched').html(mismatchedHtml);
+
+            // Fields Present in Only One Source
+            var oneSourceHtml = '<h4>Fields Present in Only One Source</h4>';
+            oneSourceHtml += '<div class="row"><div class="col-md-6">';
+            oneSourceHtml += `<h5>Present in ${data.file1_name}</h5><ul>`;
+            data.only_in_a.forEach(function(field) {
+                oneSourceHtml += `<li>${field}</li>`;
+            });
+            oneSourceHtml += '</ul></div><div class="col-md-6">';
+            oneSourceHtml += `<h5>Present in ${data.file2_name}</h5><ul>`;
+            data.only_in_b.forEach(function(field) {
+                oneSourceHtml += `<li>${field}</li>`;
+            });
+            oneSourceHtml += '</ul></div></div>';
+            $('#one-source').html(oneSourceHtml);
+
+            $('#resultsSection').show();
+        }
+
+         function displayComparisonResults(data) {
+            file1Name = data.file1_name;
+            file2Name = data.file2_name;
+
+            // Matched Values
+            var matchedHtml = '<h4>Matched Values</h4>';
+            matchedHtml += generateTable(data.matched_values, file1Name, file2Name);
+            $('#matched').html(matchedHtml);
+
+            // Mismatched Values
+            var mismatchedHtml = '<h4>Mismatched Values</h4>';
+            mismatchedHtml += generateTable(data.mismatched_values, file1Name, file2Name, true);
+            $('#mismatched').html(mismatchedHtml);
+
+            // Fields Present in Only One Source
+            var oneSourceHtml = '<h4>Fields Present in Only One Source</h4>';
+            oneSourceHtml += '<div class="row"><div class="col-md-6">';
+            oneSourceHtml += `<h5>Present in ${file1Name}</h5><ul>`;
+            data.only_in_a.forEach(function(field) {
+                oneSourceHtml += `<li>${field}</li>`;
+            });
+            oneSourceHtml += '</ul></div><div class="col-md-6">';
+            oneSourceHtml += `<h5>Present in ${file2Name}</h5><ul>`;
+            data.only_in_b.forEach(function(field) {
+                oneSourceHtml += `<li>${field}</li>`;
+            });
+            oneSourceHtml += '</ul></div></div>';
+            $('#one-source').html(oneSourceHtml);
+
+            $('#resultsSection').show();
+        }
+
+        function generateTable(data, file1Name, file2Name, isMismatch = false) {
+            if (data.length === 0) {
+                return '<p>No values found in this category.</p>';
+            }
+            var tableHtml = '<table class="table table-striped">';
+            tableHtml += `<thead><tr><th>CDO Field</th><th>${file1Name}</th><th>${file2Name}</th></tr></thead><tbody>`;
+
+            data.forEach(function(row) {
+                tableHtml += `<tr><td>${row.CDO_Field}</td>`;
+                if (isMismatch) {
+                    for (var col in row.mismatches) {
+                        tableHtml += `<td class="table-warning">${row.mismatches[col].A}</td>
+                                      <td class="table-warning">${row.mismatches[col].B}</td>`;
+                        break; // Only show the first mismatch for brevity
                     }
-                });
+                } else {
+                    for (var col in row.values) {
+                        tableHtml += `<td>${row.values[col].A}</td><td>${row.values[col].B}</td>`;
+                        break; // Only show the first value for brevity
+                    }
+                }
+                tableHtml += '</tr>';
             });
 
-            function displayComparisonResults(data, selectedColumns) {
-                // Sort the data alphabetically by CDO_Field
-                data.matched_values.sort((a, b) => a.CDO_Field.localeCompare(b.CDO_Field));
-                data.mismatched_values.sort((a, b) => a.CDO_Field.localeCompare(b.CDO_Field));
-                data.only_in_a.sort((a, b) => a.localeCompare(b));
-                data.only_in_b.sort((a, b) => a.localeCompare(b));
+            tableHtml += '</tbody></table>';
+            return tableHtml;
+        }
 
-                // Matched Values
-                var matchedHtml = '<h4>Matched Values</h4>';
-                if (Object.keys(data.duplicate_fields).length > 0) {
-                    matchedHtml += '<div class="alert alert-warning">';
-                    matchedHtml += '<h5>Duplicate CDO Fields Detected:</h5>';
-                    matchedHtml += '<ul>';
-                    for (var field in data.duplicate_fields) {
-                        matchedHtml += `<li>${field}: present ${data.duplicate_fields[field]} times</li>`;
-                    }
-                    matchedHtml += '</ul>';
-                    matchedHtml += '<p>Note: For duplicate fields, all occurrences were compared.</p>';
-                    matchedHtml += '</div>';
-                }
-                matchedHtml += generateTable(data.matched_values, selectedColumns);
-                $('#matched').html(matchedHtml);
-
-                // Mismatched Values
-                var mismatchedHtml = '<h4>Mismatched Values</h4>';
-                mismatchedHtml += generateTable(data.mismatched_values, selectedColumns, true);
-                $('#mismatched').html(mismatchedHtml);
-
-                // Fields Present in Only One Source
-                var oneSourceHtml = '<h4>Fields Present in Only One Source</h4>';
-                oneSourceHtml += '<div class="row"><div class="col-md-6">';
-                oneSourceHtml += '<h5>Present in Source A</h5><ul>';
-                data.only_in_a.forEach(function(field) {
-                    oneSourceHtml += `<li>${field}</li>`;
-                });
-                oneSourceHtml += '</ul></div><div class="col-md-6">';
-                oneSourceHtml += '<h5>Present in Source B</h5><ul>';
-                data.only_in_b.forEach(function(field) {
-                    oneSourceHtml += `<li>${field}</li>`;
-                });
-                oneSourceHtml += '</ul></div></div>';
-                $('#one-source').html(oneSourceHtml);
-
-                $('#resultsSection').show();
-
-                // Ensure the first tab is active
-                $('#resultTabs button:first').tab('show');
-            }
-
-             function generateTable(data, columns, isMismatch = false) {
-                if (data.length === 0) {
-                    return '<p>No values found in this category.</p>';
-                }
-                var tableHtml = '<table class="table table-striped">';
-                tableHtml += '<thead><tr><th>CDO Field</th>';
-                columns.forEach(function(col) {
-                    tableHtml += `<th>${col} (A)</th><th>${col} (B)</th>`;
-                });
-                tableHtml += '</tr></thead><tbody>';
-
-                data.forEach(function(row) {
-                    tableHtml += `<tr><td>${row.CDO_Field}</td>`;
-                    columns.forEach(function(col) {
-                        var cellClassA = isMismatch && row.mismatches && row.mismatches[col] ? 'table-warning' : '';
-                        var cellClassB = isMismatch && row.mismatches && row.mismatches[col] ? 'table-warning' : '';
-                        var valueA = isMismatch ? (row.mismatches && row.mismatches[col] ? row.mismatches[col].A : '') : (row.values && row.values[col] ? row.values[col].A : '');
-                        var valueB = isMismatch ? (row.mismatches && row.mismatches[col] ? row.mismatches[col].B : '') : (row.values && row.values[col] ? row.values[col].B : '');
-                        tableHtml += `<td class="${cellClassA}">${valueA}</td><td class="${cellClassB}">${valueB}</td>`;
-                    });
-                    tableHtml += '</tr>';
-                });
-
-                tableHtml += '</tbody></table>';
-                return tableHtml;
-            }
-
-            $('#newComparisonBtn').click(function() {
-                $('#resultsSection').hide();
-                $('#inputSection').show();
-                $('#uploadForm')[0].reset();
-                $('.drop-zone__prompt').text('Drop CSV file here or click to upload');
-                $('#columnSelection').hide();
-                $('#comparisonResults').empty();
+        $('#newComparisonBtn').click(function() {
+            $('#resultsSection').hide();
+            $('#inputSection').show();
+            $('#uploadForm')[0].reset();
+            $('.drop-zone__prompt').text('Drop CSV file here or click to upload');
+            $('#columnSelection').hide();
         });
     </script>
 </body>
