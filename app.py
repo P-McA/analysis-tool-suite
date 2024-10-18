@@ -333,66 +333,47 @@ def generate_revision_history():
     removed_fields = fields_b - fields_a
 
     if new_fields:
-        revision_history.append("Added mappings for:")
+        revision_history.append("Added the following fields:")
         for field in sorted(new_fields):
-            revision_history.append(f"• {field}")
+            revision_history.append(f"- {field}")
         revision_history.append("")  # Add an empty line for spacing
 
     if removed_fields:
-        revision_history.append("Removed mappings for:")
+        revision_history.append("Removed the following fields:")
         for field in sorted(removed_fields):
-            revision_history.append(f"• {field}")
+            revision_history.append(f"- {field}")
         revision_history.append("")  # Add an empty line for spacing
 
     # Compare changes in existing fields
     common_fields = fields_a.intersection(fields_b)
     field_changes = defaultdict(list)
-    multiple_column_changes = defaultdict(list)
 
     for field in common_fields:
         row_a = df_a[df_a[impact_field] == field].iloc[0]
         row_b = df_b[df_b[impact_field] == field].iloc[0]
 
-        changes = []
         for col in df_a.columns[1:]:  # Skip the impact field
             if col in df_b.columns:
-                if row_a[col] != row_b[col]:
-                    changes.append((col, row_b[col], row_a[col]))
+                val_a, val_b = row_a[col], row_b[col]
+                if pd.notna(val_a) and pd.notna(val_b) and val_a != val_b:
+                    field_changes[col].append(f"- {field}: {val_b} -> {val_a}")
 
-        if len(changes) == 1:
-            col, old_value, new_value = changes[0]
-            field_changes[col].append(f"• {field} - {old_value} -> {new_value}")
-        elif len(changes) > 1:
-            multiple_column_changes[field] = [f"• {col} - {old_value} -> {new_value}" for col, old_value, new_value in changes]
-
-    # Add single column changes
+    # Add changes to revision history
     for col, changes in field_changes.items():
         if changes:
-            revision_history.append(f"Updated the {col} for:")
+            revision_history.append(f"Updated the {col} of the following fields:")
             revision_history.extend(changes)
             revision_history.append("")  # Add an empty line for spacing
 
-    # Add multiple column changes
-    for field, changes in multiple_column_changes.items():
-        revision_history.append(f"Updated the following columns for {field}:")
-        revision_history.extend(changes)
-        revision_history.append("")  # Add an empty line for spacing
-
-    # Format the revision history entries
-    formatted_entries = []
-    for entry in revision_history:
-        if entry:  # Skip empty lines
-            formatted_entries.append(entry)
-        elif formatted_entries:  # If we have a non-empty entry, add it to the result
-            yield_entry(formatted_entries)
-            formatted_entries = []
-
-    # Add any remaining entries
-    if formatted_entries:
-        yield_entry(formatted_entries)
-
-    # If no changes were detected, add a message indicating so
-    if not revision_entries:
+    # Combine all changes into a single entry
+    if revision_history:
+        revision_entries.append({
+            "date": datetime.now().strftime("%d-%m-%Y"),
+            "description": "\n".join(revision_history),
+            "author": "",
+            "tickets": ""
+        })
+    else:
         revision_entries.append({
             "date": datetime.now().strftime("%d-%m-%Y"),
             "description": "No changes detected between the two versions.",
@@ -405,14 +386,6 @@ def generate_revision_history():
     })
 
 revision_entries = []
-
-def yield_entry(formatted_entries):
-    revision_entries.append({
-        "date": datetime.now().strftime("%d-%m-%Y"),
-        "description": "\n".join(formatted_entries),
-        "author": "",
-        "tickets": ""
-    })
 
 
 if __name__ == '__main__':
