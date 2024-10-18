@@ -8,7 +8,7 @@ import pandas as pd
 import io
 import json
 from collections import defaultdict
-
+from datetime import datetime
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -146,16 +146,19 @@ def filter_unique_values():
     different_values = data['different_values']
 
     # Fields to remove when "Remove Unique Values" is selected
-    unique_fields = ['TrdCaptRpt/@TrdID', 'TrdCaptRpt/@TrdID2', 'TrdCaptRpt/@RptID', 'TrdCaptRpt/@MtchId',  'TrdCaptRpt/@LastUpdateTm', 'TrdCaptRpt/@TxnTm', 'TrdCaptRpt/@BizDt',
+    unique_fields = ['TrdCaptRpt/@TrdID', 'TrdCaptRpt/@TrdID2', 'TrdCaptRpt/@RptID', 'TrdCaptRpt/@MtchId',
+                     'TrdCaptRpt/@LastUpdateTm', 'TrdCaptRpt/@TxnTm', 'TrdCaptRpt/@BizDt',
                      'TrdCaptRpt/@TrdDt', ]
 
     filtered_values = [item for item in different_values if item['field'] not in unique_fields]
 
     return jsonify(filtered_values)
 
+
 @app.route('/cdo_comparison')
 def cdo_comparison():
     return render_template('cdo_comparison.html')
+
 
 @app.route('/upload_cdo', methods=['POST'])
 def upload_cdo():
@@ -174,6 +177,7 @@ def upload_cdo():
         'file2_name': file2_name
     })
 
+
 @app.route('/compare_cdo', methods=['POST'])
 def compare_cdo():
     df1, file1_name = get_dataframe('file1', 'csvTextA', 'File A')
@@ -191,7 +195,8 @@ def compare_cdo():
         }), 400
 
     try:
-        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2, selected_columns)
+        matched_values, mismatched_values, only_in_a, only_in_b, duplicate_fields = compare_dataframes(df1, df2,
+                                                                                                       selected_columns)
 
         # Sort the results alphabetically
         matched_values.sort(key=lambda x: x['CDO_Field'])
@@ -215,6 +220,7 @@ def compare_cdo():
         'file2_name': file2_name
     })
 
+
 def get_dataframe(file_key, text_key, default_name):
     if file_key in request.files and request.files[file_key].filename != '':
         file = request.files[file_key]
@@ -223,6 +229,7 @@ def get_dataframe(file_key, text_key, default_name):
         return pd.read_csv(io.StringIO(request.form[text_key]), keep_default_na=False), default_name
     else:
         return pd.DataFrame(), default_name
+
 
 def compare_dataframes(df1, df2, columns):
     matched_values = []
@@ -281,6 +288,131 @@ def compare_dataframes(df1, df2, columns):
             only_in_b.append(field)
 
     return matched_values, mismatched_values, only_in_a, only_in_b, dict(duplicate_fields)
+
+
+@app.route('/revision_history')
+def revision_history():
+    return render_template('revision_history_generator.html')
+
+@app.route('/generate_revision_history', methods=['POST'])
+def generate_revision_history():
+    file_a = request.files['fileA']
+    file_b = request.files['fileB']
+
+    df_a = pd.read_csv(file_a)
+    df_b = pd.read_csv(file_b)
+
+    revision_history = []
+
+    # Compare columns
+    columns_a = set(df_a.columns)
+    columns_b = set(df_b.columns)
+
+    removed_columns = columns_b - columns_a
+    added_columns = columns_a - columns_b
+
+    # Only add column changes if there are actual named columns added or removed
+    if removed_columns:
+        named_removed = [col for col in removed_columns if not col.startswith('Unnamed:')]
+        if named_removed:
+            revision_history.append(f"Removed columns: {', '.join(named_removed)}")
+
+    if added_columns:
+        named_added = [col for col in added_columns if not col.startswith('Unnamed:')]
+        if named_added:
+            revision_history.append(f"Added columns: {', '.join(named_added)}")
+
+    # Use the first column as the impact field
+    impact_field = df_a.columns[0]
+
+    # Compare content
+    fields_a = set(df_a[impact_field])
+    fields_b = set(df_b[impact_field])
+
+    new_fields = fields_a - fields_b
+    removed_fields = fields_b - fields_a
+
+    if new_fields:
+        revision_history.append("Added mappings for:")
+        for field in sorted(new_fields):
+            revision_history.append(f"• {field}")
+        revision_history.append("")  # Add an empty line for spacing
+
+    if removed_fields:
+        revision_history.append("Removed mappings for:")
+        for field in sorted(removed_fields):
+            revision_history.append(f"• {field}")
+        revision_history.append("")  # Add an empty line for spacing
+
+    # Compare changes in existing fields
+    common_fields = fields_a.intersection(fields_b)
+    field_changes = defaultdict(list)
+    multiple_column_changes = defaultdict(list)
+
+    for field in common_fields:
+        row_a = df_a[df_a[impact_field] == field].iloc[0]
+        row_b = df_b[df_b[impact_field] == field].iloc[0]
+
+        changes = []
+        for col in df_a.columns[1:]:  # Skip the impact field
+            if col in df_b.columns:
+                if row_a[col] != row_b[col]:
+                    changes.append((col, row_b[col], row_a[col]))
+
+        if len(changes) == 1:
+            col, old_value, new_value = changes[0]
+            field_changes[col].append(f"• {field} - {old_value} -> {new_value}")
+        elif len(changes) > 1:
+            multiple_column_changes[field] = [f"• {col} - {old_value} -> {new_value}" for col, old_value, new_value in changes]
+
+    # Add single column changes
+    for col, changes in field_changes.items():
+        if changes:
+            revision_history.append(f"Updated the {col} for:")
+            revision_history.extend(changes)
+            revision_history.append("")  # Add an empty line for spacing
+
+    # Add multiple column changes
+    for field, changes in multiple_column_changes.items():
+        revision_history.append(f"Updated the following columns for {field}:")
+        revision_history.extend(changes)
+        revision_history.append("")  # Add an empty line for spacing
+
+    # Format the revision history entries
+    formatted_entries = []
+    for entry in revision_history:
+        if entry:  # Skip empty lines
+            formatted_entries.append(entry)
+        elif formatted_entries:  # If we have a non-empty entry, add it to the result
+            yield_entry(formatted_entries)
+            formatted_entries = []
+
+    # Add any remaining entries
+    if formatted_entries:
+        yield_entry(formatted_entries)
+
+    # If no changes were detected, add a message indicating so
+    if not revision_entries:
+        revision_entries.append({
+            "date": datetime.now().strftime("%d-%m-%Y"),
+            "description": "No changes detected between the two versions.",
+            "author": "",
+            "tickets": ""
+        })
+
+    return jsonify({
+        'revision_history': revision_entries
+    })
+
+revision_entries = []
+
+def yield_entry(formatted_entries):
+    revision_entries.append({
+        "date": datetime.now().strftime("%d-%m-%Y"),
+        "description": "\n".join(formatted_entries),
+        "author": "",
+        "tickets": ""
+    })
 
 
 if __name__ == '__main__':
