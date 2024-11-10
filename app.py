@@ -388,5 +388,26 @@ def generate_revision_history():
 revision_entries = []
 
 
+@app.route('/confluence_comparison')
+def confluence_comparison():
+    return render_template('confluence_comparison.html')
+
+
+@app.route('/compare_confluence', methods=['POST'])
+def compare_confluence():
+    url1 = request.form.get('url1')
+    url2 = request.form.get('url2')
+
+    if not url1 or not url2:
+        return jsonify({'error': 'Both URLs are required'}), 400
+
+    try:
+        comparer = ConfluenceRevisionComparer()
+        changes = comparer.compare_pages(url1, url2)
+        return jsonify({'changes': changes})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True)

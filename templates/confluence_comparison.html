@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<body>
+<div class="container mt-5">
+    <h1 class="mb-4">Confluence Table Revision History Generator</h1>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <form id="compareForm">
+                        <div class="mb-3">
+                            <label for="url1" class="form-label">Original Page URL</label>
+                            <input type="url" class="form-control" id="url1" name="url1" required
+                                   placeholder="https://your-confluence.com/pages/viewpage.action?pageId=...">
+                        </div>
+                        <div class="mb-3">
+                            <label for="url2" class="form-label">Modified Page URL</label>
+                            <input type="url" class="form-control" id="url2" name="url2" required
+                                   placeholder="https://your-confluence.com/pages/viewpage.action?pageId=...">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Generate Table Revision History</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="results" class="row" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Table Revision History</h5>
+                </div>
+                <div class="card-body">
+                    <div id="changesList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('compareForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const url1 = document.getElementById('url1').value;
+    const url2 = document.getElementById('url2').value;
+
+    try {
+        const response = await fetch('/compare_confluence', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                url1: url1,
+                url2: url2
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        displayChanges(data.changes);
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+
+function displayChanges(changes) {
+    const changesList = document.getElementById('changesList');
+    changesList.innerHTML = '';
+
+    if (changes.length === 0) {
+        changesList.innerHTML = '<div class="alert alert-info">No changes detected in the tables.</div>';
+        document.getElementById('results').style.display = 'block';
+        return;
+    }
+
+    // Group changes by field
+    const changesByField = {};
+    changes.forEach(change => {
+        if (!changesByField[change.field]) {
+            changesByField[change.field] = [];
+        }
+        changesByField[change.field].push(change);
+    });
+
+    // Display changes grouped by field
+    for (const [field, fieldChanges] of Object.entries(changesByField)) {
+        const fieldSection = document.createElement('div');
+        fieldSection.className = 'mb-4';
+
+        const fieldHeader = document.createElement('h6');
+        fieldHeader.className = 'mb-3';
+        fieldHeader.textContent = field;
+        fieldSection.appendChild(fieldHeader);
+
+        fieldChanges.forEach(change => {
+            const changeElement = document.createElement('div');
+            changeElement.className = 'change-item mb-2 p-2 border rounded';
+
+            let content = '';
+            switch(change.type) {
+                case 'new_field':
+                    changeElement.classList.add('bg-light-success');
+                    content = `<strong>New Field Added</strong>`;
+                    break;
+                case 'removed_field':
+                    changeElement.classList.add('bg-light-danger');
+                    content = `<strong>Field Removed</strong>`;
+                    break;
+                case 'field_update':
+                    changeElement.classList.add('bg-light-warning');
+                    content = `
+                        <strong>Column "${change.column}" Updated</strong><br>
+                        <small class="text-muted">Previous value: ${escapeHtml(change.old_value)}</small><br>
+                        <small class="text-success">New value: ${escapeHtml(change.new_value)}</small>
+                    `;
+                    break;
+            }
+
+            changeElement.innerHTML = content;
+            fieldSection.appendChild(changeElement);
+        });
+
+        changesList.appendChild(fieldSection);
+    }
+
+    document.getElementById('results').style.display = 'block';
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+</script>
+
+<style>
+.bg-light-danger {
+    background-color: #fff5f5;
+}
+.bg-light-success {
+    background-color: #f0fff4;
+}
+.bg-light-warning {
+    background-color: #fffff0;
+}
+.change-item {
+    font-size: 0.9rem;
+}
+</style>
+</body>
