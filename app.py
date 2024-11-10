@@ -9,6 +9,7 @@ import io
 import json
 from collections import defaultdict
 from datetime import datetime
+from confluence_helper import ConfluenceTableComparer
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -393,6 +394,11 @@ def confluence_comparison():
     return render_template('confluence_comparison.html')
 
 
+@app.route('/confluence_comparison')
+def confluence_comparison():
+    return render_template('confluence_comparison.html')
+
+
 @app.route('/compare_confluence', methods=['POST'])
 def compare_confluence():
     url1 = request.form.get('url1')
@@ -402,8 +408,8 @@ def compare_confluence():
         return jsonify({'error': 'Both URLs are required'}), 400
 
     try:
-        comparer = ConfluenceRevisionComparer()
-        changes = comparer.compare_pages(url1, url2)
+        comparer = ConfluenceTableComparer()
+        changes = comparer.compare_tables(url1, url2)
         return jsonify({'changes': changes})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

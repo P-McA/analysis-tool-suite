@@ -9,14 +9,14 @@ import re
 
 class ConfluenceTableComparer:
     def __init__(self):
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
         self.driver = None
 
     def start_browser(self):
         if not self.driver:
+            chrome_options = webdriver.ChromeOptions()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
             self.driver = webdriver.Chrome(options=chrome_options)
 
     def close_browser(self):
