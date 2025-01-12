@@ -394,48 +394,116 @@ revision_entries = []
 def cdo_json_comparison():
     return render_template('cdo_json_comparison.html')
 
+def get_all_paths(obj, parent_path=''):
+    """Recursively get all paths in a nested dictionary using dot notation"""
+    paths = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            current_path = f"{parent_path}.{key}" if parent_path else key
+            paths.append(current_path)
+            if isinstance(value, (dict, list)):
+                paths.extend(get_all_paths(value, current_path))
+    elif isinstance(obj, list):
+        for i, value in enumerate(obj):
+            current_path = f"{parent_path}[{i}]"
+            if isinstance(value, (dict, list)):
+                paths.extend(get_all_paths(value, current_path))
+    return paths
+
+def get_nested_value(obj, path):
+    """Get a value from a nested dictionary using dot notation"""
+    try:
+        current = obj
+        parts = path.split('.')
+        for part in parts:
+            if '[' in part:  # Handle array indices if present
+                key, index = part.split('[')
+                index = int(index.rstrip(']'))
+                current = current[key][index]
+            else:
+                current = current[part]
+        return current
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 @app.route('/compare_json', methods=['POST'])
 def compare_json():
-    app.logger.debug("JSON Comparison request received")
-
-    file1 = request.files['file1']
-    file2 = request.files['file2']
-
-    app.logger.debug(f"File 1: {file1.filename}, File 2: {file2.filename}")
-
     try:
+        file1 = request.files['file1']
+        file2 = request.files['file2']
+
         json1 = json.loads(file1.read().decode('utf-8'))
         json2 = json.loads(file2.read().decode('utf-8'))
 
-        # Use DeepDiff to compare the JSON structures
-        diff = DeepDiff(json1, json2, verbose_level=2)
+        # Compare the JSON structures
+        only_in_1 = []
+        only_in_2 = []
+        different_values = []
+
+        def flatten_json(obj, prefix=''):
+            items = {}
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_key = f"{prefix}.{key}" if prefix else str(key)
+                    if isinstance(value, (dict, list)):
+                        items.update(flatten_json(value, new_key))
+                    else:
+                        items[new_key] = value
+            elif isinstance(obj, list):
+                for i, value in enumerate(obj):
+                    new_key = f"{prefix}[{i}]"
+                    if isinstance(value, (dict, list)):
+                        items.update(flatten_json(value, new_key))
+                    else:
+                        items[new_key] = value
+            return items
+
+        # Flatten both JSONs
+        flat_json1 = flatten_json(json1)
+        flat_json2 = flatten_json(json2)
+
+        # Find structural differences
+        only_in_1 = sorted(set(flat_json1.keys()) - set(flat_json2.keys()))
+        only_in_2 = sorted(set(flat_json2.keys()) - set(flat_json1.keys()))
+
+        # Compare values for common keys
+        common_keys = set(flat_json1.keys()) & set(flat_json2.keys())
+        for key in sorted(common_keys):
+            if flat_json1[key] != flat_json2[key]:
+                different_values.append({
+                    'path': key,
+                    'value1': flat_json1[key],
+                    'value2': flat_json2[key]
+                })
 
         result = {
-            'file1_name': file1.filename,
-            'file2_name': file2.filename,
-            'only_in_1': list(diff.get('dictionary_item_removed', [])),
-            'only_in_2': list(diff.get('dictionary_item_added', [])),
-            'different_values': [
-                {
-                    'path': k,
-                    'value1': v.get('old_value'),
-                    'value2': v.get('new_value')
-                }
-                for k, v in diff.get('values_changed', {}).items()
-            ],
-            'json1': json.dumps(json1, indent=2),
-            'json2': json.dumps(json2, indent=2)
+            'file1_name': os.path.splitext(file1.filename)[0],
+            'file2_name': os.path.splitext(file2.filename)[0],
+            'only_in_1': only_in_1,
+            'only_in_2': only_in_2,
+            'different_values': different_values
         }
 
-        app.logger.debug("JSON comparison completed")
         return jsonify(result)
 
     except json.JSONDecodeError as e:
         return jsonify({'error': f'Invalid JSON format: {str(e)}'}), 400
     except Exception as e:
+        app.logger.error(f"Error in comparison: {str(e)}")  # Add logging
         return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
+@app.route('/check_static')
+def check_static():
+    css_path = os.path.join(app.static_folder, 'css/cdo_json_comparison.css')
+    js_path = os.path.join(app.static_folder, 'js/cdo_json_comparison.js')
 
-
+    return {
+        'css_exists': os.path.exists(css_path),
+        'css_path': css_path,
+        'js_exists': os.path.exists(js_path),
+        'js_path': js_path,
+        'static_folder': app.static_folder,
+    }
 '''
 @app.route('/confluence_comparison')
 def confluence_comparison():
