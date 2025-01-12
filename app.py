@@ -9,6 +9,8 @@ import io
 import json
 from collections import defaultdict
 from datetime import datetime
+import json
+from deepdiff import DeepDiff
 from confluence_helper import ConfluenceTableComparer
 
 app = Flask(__name__)
@@ -388,7 +390,53 @@ def generate_revision_history():
 
 revision_entries = []
 
+@app.route('/cdo_json_comparison')
+def cdo_json_comparison():
+    return render_template('cdo_json_comparison.html')
 
+@app.route('/compare_json', methods=['POST'])
+def compare_json():
+    app.logger.debug("JSON Comparison request received")
+
+    file1 = request.files['file1']
+    file2 = request.files['file2']
+
+    app.logger.debug(f"File 1: {file1.filename}, File 2: {file2.filename}")
+
+    try:
+        json1 = json.loads(file1.read().decode('utf-8'))
+        json2 = json.loads(file2.read().decode('utf-8'))
+
+        # Use DeepDiff to compare the JSON structures
+        diff = DeepDiff(json1, json2, verbose_level=2)
+
+        result = {
+            'file1_name': file1.filename,
+            'file2_name': file2.filename,
+            'only_in_1': list(diff.get('dictionary_item_removed', [])),
+            'only_in_2': list(diff.get('dictionary_item_added', [])),
+            'different_values': [
+                {
+                    'path': k,
+                    'value1': v.get('old_value'),
+                    'value2': v.get('new_value')
+                }
+                for k, v in diff.get('values_changed', {}).items()
+            ],
+            'json1': json.dumps(json1, indent=2),
+            'json2': json.dumps(json2, indent=2)
+        }
+
+        app.logger.debug("JSON comparison completed")
+        return jsonify(result)
+
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'Invalid JSON format: {str(e)}'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
+
+
+'''
 @app.route('/confluence_comparison')
 def confluence_comparison():
     return render_template('confluence_comparison.html')
@@ -413,7 +461,7 @@ def compare_confluence():
         return jsonify({'changes': changes})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
+'''
 
 if __name__ == '__main__':
     app.run(debug=True)
