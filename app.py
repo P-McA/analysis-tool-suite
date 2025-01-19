@@ -529,6 +529,28 @@ def log_excluded_field():
         logger.info(f'Field un-excluded: {field_path}')
 
     return jsonify({'status': 'success'})
+
+
+@app.route('/machine_readable')
+def machine_readable():
+    return render_template('mapping_editor.html')
+@app.route('/upload_mapping', methods=['POST'])
+def upload_mapping():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    if not file.filename.endswith('.xml'):
+        return jsonify({'error': 'File must be XML'}), 400
+
+    try:
+        xml_content = file.read().decode('utf-8')
+        return jsonify({'success': True, 'content': xml_content})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 '''
 @app.route('/confluence_comparison')
 def confluence_comparison():
