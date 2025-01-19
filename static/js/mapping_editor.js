@@ -4,6 +4,18 @@ Dropzone.autoDiscover = false;
 document.addEventListener('DOMContentLoaded', function() {
     let currentMapping = null;
 
+    // Constants for mapping types
+    const MAPPING_TYPES = [
+        'AGGREGATED',
+        'DEFAULTED',
+        'DERIVED',
+        'ENRICHED',
+        'FORMATTED',
+        'MAPPED',
+        'PASSED_THROUGH',
+        'NONE'
+    ];
+
     // Initialize dropzone
     const dropzone = new Dropzone("#xmlDropzone", {
         url: "/upload_mapping",
@@ -46,15 +58,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Extract mapping data from XML
     function extractMappingData(xmlDoc) {
         const mappings = [];
-        const mappingNodes = xmlDoc.getElementsByTagName('mapping');
+        const fieldNodes = xmlDoc.getElementsByTagName('field');
 
-        for (const node of mappingNodes) {
+        for (const fieldNode of fieldNodes) {
+            const destNode = fieldNode.getElementsByTagName('dest')[0];
+            const fieldName = destNode ? destNode.textContent.trim() : '';
+
             mappings.push({
-                fieldName: node.getAttribute('fieldName') || '',
-                sourcePath: node.getAttribute('sourcePath') || '',
-                targetPath: node.getAttribute('targetPath') || '',
-                dataType: node.getAttribute('dataType') || 'string',
-                required: node.getAttribute('required') === 'true'
+                fieldName: fieldName,
+                sourcePath: fieldNode.getAttribute('sourcePath') || '',
+                targetPath: fieldNode.getAttribute('targetPath') || '',
+                dataType: fieldNode.getAttribute('dataType') || 'string',
+                mappingType: fieldNode.getAttribute('mappingType') || 'NONE',
+                required: fieldNode.getAttribute('required') === 'true'
             });
         }
 
@@ -96,6 +112,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     <option value="date" ${mapping.dataType === 'date' ? 'selected' : ''}>Date</option>
                 </select>
             </td>
+            <td>
+                <select class="form-select" data-field="mappingType" data-index="${index}">
+                    ${MAPPING_TYPES.map(type => `
+                        <option value="${type}" ${mapping.mappingType === type ? 'selected' : ''}>
+                            ${type}
+                        </option>
+                    `).join('')}
+                </select>
+            </td>
             <td class="text-center">
                 <input type="checkbox" class="form-check-input" ${mapping.required ? 'checked' : ''} 
                        data-field="required" data-index="${index}">
@@ -129,6 +154,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sourcePath: '',
             targetPath: '',
             dataType: 'string',
+            mappingType: 'NONE',
             required: false
         };
 
@@ -161,13 +187,15 @@ document.addEventListener('DOMContentLoaded', function() {
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
 
         mappings.forEach(mapping => {
-            xml += '  <mapping';
-            xml += ` fieldName="${escapeXML(mapping.fieldName)}"`;
+            xml += '  <field';
             xml += ` sourcePath="${escapeXML(mapping.sourcePath)}"`;
             xml += ` targetPath="${escapeXML(mapping.targetPath)}"`;
             xml += ` dataType="${escapeXML(mapping.dataType)}"`;
+            xml += ` mappingType="${escapeXML(mapping.mappingType)}"`;
             xml += ` required="${mapping.required}"`;
-            xml += '/>\n';
+            xml += '>\n';
+            xml += `    <dest>${escapeXML(mapping.fieldName)}</dest>\n`;
+            xml += '  </field>\n';
         });
 
         xml += '</mappings>';
@@ -176,6 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Escape XML special characters
     function escapeXML(str) {
+        if (!str) return '';
         return str.replace(/[<>&'"]/g, function(c) {
             switch (c) {
                 case '<': return '&lt;';
