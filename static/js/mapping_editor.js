@@ -47,29 +47,49 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Extract mapping data from XML
-    function extractMappingData(xmlString) {
-        const mappings = [];
+    // Extract mapping data from XML
+// Extract mapping data from XML
+function extractMappingData(xmlString) {
+    const mappings = [];
 
-        // Get all field elements
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-        const fieldNodes = xmlDoc.getElementsByTagName('field');
+    // Get all field elements
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+    const fieldNodes = xmlDoc.getElementsByTagName('field');
 
-        for (let i = 0; i < fieldNodes.length; i++) {
-            const fieldNode = fieldNodes[i];
-            const destContent = getTagContent(xmlString, 'dest', fieldNode);
+    for (let i = 0; i < fieldNodes.length; i++) {
+        const fieldNode = fieldNodes[i];
 
-            mappings.push({
-                fieldName: destContent,
-                source: fieldNode.getAttribute('source') || '',
-                mappingType: getNodeTextContent(fieldNode, 'mapping-type') || 'NONE',
-                notes: getNodeTextContent(fieldNode, 'notes') || '',
-                tickets: getNodeTextContent(fieldNode, 'jira') || ''
-            });
-        }
+        // Get the raw content of the dest tag using regex
+        const destMatch = new XMLSerializer()
+            .serializeToString(fieldNode)
+            .match(/<dest>([\s\S]*?)<\/dest>/);
 
-        return mappings;
+        const fieldName = destMatch ? destMatch[1] : '';
+
+        // Get other nodes content
+        const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
+        const notesNode = fieldNode.getElementsByTagName('notes')[0];
+        const jiraNode = fieldNode.getElementsByTagName('jira')[0];
+
+        mappings.push({
+            fieldName: fieldName,
+            source: fieldNode.getAttribute('source') || '',
+            mappingType: mappingTypeNode ? mappingTypeNode.textContent : 'NONE',
+            notes: notesNode ? notesNode.textContent : '',
+            tickets: jiraNode ? jiraNode.textContent : ''
+        });
     }
+
+    // Sort mappings alphabetically by fieldName
+    mappings.sort((a, b) => {
+        if (!a.fieldName) return 1;
+        if (!b.fieldName) return -1;
+        return a.fieldName.localeCompare(b.fieldName);
+    });
+
+    return mappings;
+}
 
     // Helper function to get exact content between tags
     function getTagContent(xmlString, tagName, contextNode) {
@@ -87,61 +107,100 @@ document.addEventListener('DOMContentLoaded', function() {
         return node ? node.textContent : '';
     }
 
-    // Populate table with mapping data
-    function populateTable(mappings) {
-        const tbody = document.getElementById('mappingTableBody');
-        tbody.innerHTML = '';
+    // Update the populateTable function to sort mappings
+function populateTable(mappings) {
+    const tbody = document.getElementById('mappingTableBody');
+    tbody.innerHTML = '';
 
-        mappings.forEach((mapping, index) => {
-            const row = createTableRow(mapping, index);
-            tbody.appendChild(row);
+    // Sort the mappings array if it's not a new row being added at the top
+    if (!mappings[0] || mappings[0].fieldName) {
+        mappings.sort((a, b) => {
+            if (!a.fieldName) return 1;
+            if (!b.fieldName) return -1;
+            return a.fieldName.localeCompare(b.fieldName);
         });
     }
+
+    mappings.forEach((mapping, index) => {
+        const row = createTableRow(mapping, index);
+        tbody.appendChild(row);
+    });
+}
 
     // Create table row for mapping
     function createTableRow(mapping, index) {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="text-center">
-                ${index + 1}
-            </td>
-            <td>
-                <input type="text" class="form-control" value="${mapping.fieldName}" 
-                       data-field="fieldName" data-index="${index}">
-            </td>
-            <td>
-                <input type="text" class="form-control" value="${mapping.source}" 
-                       data-field="source" data-index="${index}">
-            </td>
-            <td>
-                <select class="form-select" data-field="mappingType" data-index="${index}">
-                    ${MAPPING_TYPES.map(type => `
-                        <option value="${type}" ${mapping.mappingType === type ? 'selected' : ''}>
-                            ${type}
-                        </option>
-                    `).join('')}
-                </select>
-            </td>
-            <td>
-                <textarea class="form-control" data-field="notes" data-index="${index}" 
-                         rows="2">${mapping.notes}</textarea>
-            </td>
-            <td>
-                <input type="text" class="form-control" value="${mapping.tickets}" 
-                       data-field="tickets" data-index="${index}">
-            </td>
-            <td class="text-center">
-                <button class="btn btn-danger btn-sm" onclick="deleteRow(${index})">Delete</button>
-            </td>
-        `;
+    const row = document.createElement('tr');
 
-        // Add event listeners for input changes
-        row.querySelectorAll('input, select, textarea').forEach(input => {
-            input.addEventListener('change', handleInputChange);
-        });
+    // Create cells individually for better control
+    const numberCell = document.createElement('td');
+    numberCell.className = 'text-center';
+    numberCell.textContent = index + 1;
 
-        return row;
+    const fieldNameCell = document.createElement('td');
+    const fieldNameInput = document.createElement('input');
+    fieldNameInput.type = 'text';
+    fieldNameInput.className = 'form-control font-monospace';
+    fieldNameInput.value = mapping.fieldName;
+    fieldNameInput.dataset.field = 'fieldName';
+    fieldNameInput.dataset.index = index;
+    fieldNameCell.appendChild(fieldNameInput);
+
+    // Build the rest of the row
+    const rowContent = `
+        <td>
+            <input type="text" class="form-control" value="${escapeHtml(mapping.source)}" 
+                   data-field="source" data-index="${index}">
+        </td>
+        <td>
+            <select class="form-select" data-field="mappingType" data-index="${index}">
+                ${MAPPING_TYPES.map(type => `
+                    <option value="${type}" ${mapping.mappingType === type ? 'selected' : ''}>
+                        ${type}
+                    </option>
+                `).join('')}
+            </select>
+        </td>
+        <td>
+            <textarea class="form-control" data-field="notes" data-index="${index}" 
+                     rows="2">${escapeHtml(mapping.notes)}</textarea>
+        </td>
+        <td>
+            <input type="text" class="form-control" value="${escapeHtml(mapping.tickets)}" 
+                   data-field="tickets" data-index="${index}">
+        </td>
+        <td class="text-center">
+            <button class="btn btn-danger btn-sm" onclick="deleteRow(${index})">Delete</button>
+        </td>
+    `;
+
+    row.appendChild(numberCell);
+    row.appendChild(fieldNameCell);
+
+    // Add the rest of the content
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = rowContent;
+    while (tempDiv.firstChild) {
+        row.appendChild(tempDiv.firstChild);
     }
+
+    // Add event listeners for input changes
+    row.querySelectorAll('input, select, textarea').forEach(input => {
+        input.addEventListener('change', handleInputChange);
+    });
+
+    return row;
+}
+
+// Helper function to safely escape HTML
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
     // Handle input changes
     function handleInputChange(event) {
