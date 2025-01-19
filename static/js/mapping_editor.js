@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                // Parse the XML and display in editor
                 parseAndDisplayMapping(e.target.result);
             } catch (error) {
                 alert('Error parsing XML file: ' + error.message);
@@ -45,14 +44,37 @@ document.addEventListener('DOMContentLoaded', function() {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlString, "text/xml");
 
-        // Extract mapping data
         currentMapping = extractMappingData(xmlDoc);
 
-        // Display the editor section
-        document.getElementById('editorSection').classList.remove('d-none');
+        // Sort the mappings alphabetically
+        currentMapping.sort((a, b) => {
+            return sortFieldNames(a.fieldName, b.fieldName);
+        });
 
-        // Populate the table
+        document.getElementById('editorSection').classList.remove('d-none');
         populateTable(currentMapping);
+    }
+
+    // Sort function for FIXML field names considering repeating groups
+    function sortFieldNames(a, b) {
+        // Split field names into parts based on repeating group notation
+        const partsA = a.split(/(\d+)/);
+        const partsB = b.split(/(\d+)/);
+
+        // Compare each part
+        for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+            // If both parts are numbers, compare numerically
+            if (!isNaN(partsA[i]) && !isNaN(partsB[i])) {
+                const diff = parseInt(partsA[i]) - parseInt(partsB[i]);
+                if (diff !== 0) return diff;
+            }
+            // Otherwise compare alphabetically
+            else {
+                const diff = partsA[i].localeCompare(partsB[i]);
+                if (diff !== 0) return diff;
+            }
+        }
+        return partsA.length - partsB.length;
     }
 
     // Extract mapping data from XML
@@ -62,15 +84,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         for (const fieldNode of fieldNodes) {
             const destNode = fieldNode.getElementsByTagName('dest')[0];
-            const fieldName = destNode ? destNode.textContent.trim() : '';
+            const notesNode = fieldNode.getElementsByTagName('notes')[0];
+            const jiraNode = fieldNode.getElementsByTagName('jira')[0];
+            const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
 
             mappings.push({
-                fieldName: fieldName,
-                sourcePath: fieldNode.getAttribute('sourcePath') || '',
-                targetPath: fieldNode.getAttribute('targetPath') || '',
-                dataType: fieldNode.getAttribute('dataType') || 'string',
-                mappingType: fieldNode.getAttribute('mappingType') || 'NONE',
-                required: fieldNode.getAttribute('required') === 'true'
+                fieldName: destNode ? destNode.textContent.trim() : '',
+                source: fieldNode.getAttribute('source') || '',
+                mappingType: mappingTypeNode ? mappingTypeNode.textContent.trim() : 'NONE',
+                notes: notesNode ? notesNode.textContent.trim() : '',
+                tickets: jiraNode ? jiraNode.textContent.trim() : ''
             });
         }
 
@@ -92,25 +115,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function createTableRow(mapping, index) {
         const row = document.createElement('tr');
         row.innerHTML = `
+            <td class="text-center">
+                ${index + 1}
+            </td>
             <td>
                 <input type="text" class="form-control" value="${mapping.fieldName}" 
                        data-field="fieldName" data-index="${index}">
             </td>
             <td>
-                <input type="text" class="form-control" value="${mapping.sourcePath}" 
-                       data-field="sourcePath" data-index="${index}">
-            </td>
-            <td>
-                <input type="text" class="form-control" value="${mapping.targetPath}" 
-                       data-field="targetPath" data-index="${index}">
-            </td>
-            <td>
-                <select class="form-select" data-field="dataType" data-index="${index}">
-                    <option value="string" ${mapping.dataType === 'string' ? 'selected' : ''}>String</option>
-                    <option value="number" ${mapping.dataType === 'number' ? 'selected' : ''}>Number</option>
-                    <option value="boolean" ${mapping.dataType === 'boolean' ? 'selected' : ''}>Boolean</option>
-                    <option value="date" ${mapping.dataType === 'date' ? 'selected' : ''}>Date</option>
-                </select>
+                <input type="text" class="form-control" value="${mapping.source}" 
+                       data-field="source" data-index="${index}">
             </td>
             <td>
                 <select class="form-select" data-field="mappingType" data-index="${index}">
@@ -121,9 +135,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     `).join('')}
                 </select>
             </td>
-            <td class="text-center">
-                <input type="checkbox" class="form-check-input" ${mapping.required ? 'checked' : ''} 
-                       data-field="required" data-index="${index}">
+            <td>
+                <textarea class="form-control" data-field="notes" data-index="${index}" 
+                         rows="2">${mapping.notes}</textarea>
+            </td>
+            <td>
+                <input type="text" class="form-control" value="${mapping.tickets}" 
+                       data-field="tickets" data-index="${index}">
             </td>
             <td class="text-center">
                 <button class="btn btn-danger btn-sm" onclick="deleteRow(${index})">Delete</button>
@@ -131,7 +149,7 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
 
         // Add event listeners for input changes
-        row.querySelectorAll('input, select').forEach(input => {
+        row.querySelectorAll('input, select, textarea').forEach(input => {
             input.addEventListener('change', handleInputChange);
         });
 
@@ -142,25 +160,30 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleInputChange(event) {
         const field = event.target.dataset.field;
         const index = parseInt(event.target.dataset.index);
-        const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+        const value = event.target.value;
 
         currentMapping[index][field] = value;
     }
 
     // Add new row
+    // Add new row
     document.getElementById('addRowBtn').addEventListener('click', function() {
         const newMapping = {
             fieldName: '',
-            sourcePath: '',
-            targetPath: '',
-            dataType: 'string',
+            source: '',
             mappingType: 'NONE',
-            required: false
+            notes: '',
+            tickets: ''
         };
 
-        currentMapping.push(newMapping);
-        const row = createTableRow(newMapping, currentMapping.length - 1);
-        document.getElementById('mappingTableBody').appendChild(row);
+        // Add new mapping to the beginning of the array
+        currentMapping.unshift(newMapping);
+
+        // Repopulate the entire table
+        populateTable(currentMapping);
+
+        // Optional: Scroll to top to ensure new row is visible
+        window.scrollTo(0, 0);
     });
 
     // Delete row
@@ -188,13 +211,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         mappings.forEach(mapping => {
             xml += '  <field';
-            xml += ` sourcePath="${escapeXML(mapping.sourcePath)}"`;
-            xml += ` targetPath="${escapeXML(mapping.targetPath)}"`;
-            xml += ` dataType="${escapeXML(mapping.dataType)}"`;
-            xml += ` mappingType="${escapeXML(mapping.mappingType)}"`;
-            xml += ` required="${mapping.required}"`;
+            xml += ` source="${escapeXML(mapping.source)}"`;
             xml += '>\n';
             xml += `    <dest>${escapeXML(mapping.fieldName)}</dest>\n`;
+            xml += `    <mapping-type>${escapeXML(mapping.mappingType)}</mapping-type>\n`;
+            if (mapping.notes) {
+                xml += `    <notes>${escapeXML(mapping.notes)}</notes>\n`;
+            }
+            if (mapping.tickets) {
+                xml += `    <jira>${escapeXML(mapping.tickets)}</jira>\n`;
+            }
             xml += '  </field>\n';
         });
 
