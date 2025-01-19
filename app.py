@@ -504,6 +504,31 @@ def check_static():
         'js_path': js_path,
         'static_folder': app.static_folder,
     }
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('json_comparison.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('json_comparison')
+
+@app.route('/log_excluded_field', methods=['POST'])
+def log_excluded_field():
+    data = request.json
+    field_path = data.get('field_path')
+    action = data.get('action')  # 'exclude' or 'include'
+
+    if action == 'exclude':
+        logger.info(f'Field excluded: {field_path}')
+    else:
+        logger.info(f'Field un-excluded: {field_path}')
+
+    return jsonify({'status': 'success'})
 '''
 @app.route('/confluence_comparison')
 def confluence_comparison():
