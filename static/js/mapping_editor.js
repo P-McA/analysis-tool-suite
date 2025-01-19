@@ -41,75 +41,50 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Parse XML and display in editor
     function parseAndDisplayMapping(xmlString) {
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-
-        currentMapping = extractMappingData(xmlDoc);
-
-        // Sort the mappings alphabetically
-        currentMapping.sort((a, b) => {
-            return sortFieldNames(a.fieldName, b.fieldName);
-        });
-
+        currentMapping = extractMappingData(xmlString);
         document.getElementById('editorSection').classList.remove('d-none');
         populateTable(currentMapping);
     }
 
-    // Sort function for FIXML field names considering repeating groups
-    // Update the sort function to handle complex field names
-    function sortFieldNames(a, b) {
-        // First, check if either field name is empty
-        if (!a) return 1;
-        if (!b) return -1;
-        if (!a && !b) return 0;
-
-        // Split both field names into parts but preserve special characters
-        const partsA = a.split(/(?=[\[\]/@])|(?<=[\[\]/@])/);
-        const partsB = b.split(/(?=[\[\]/@])|(?<=[\[\]/@])/);
-
-        // Compare each part
-        for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-            // If both parts are numbers, compare numerically
-            const numA = parseInt(partsA[i]);
-            const numB = parseInt(partsB[i]);
-            if (!isNaN(numA) && !isNaN(numB)) {
-                if (numA !== numB) return numA - numB;
-            } else {
-                // Compare strings case-insensitively
-                const compareResult = partsA[i].toLowerCase().localeCompare(partsB[i].toLowerCase());
-                if (compareResult !== 0) return compareResult;
-            }
-        }
-
-        // If one path is longer than the other, the shorter one comes first
-        return partsA.length - partsB.length;
-    }
-
     // Extract mapping data from XML
-    // Extract mapping data from XML
-    function extractMappingData(xmlDoc) {
+    function extractMappingData(xmlString) {
         const mappings = [];
+
+        // Get all field elements
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
         const fieldNodes = xmlDoc.getElementsByTagName('field');
 
-        for (const fieldNode of fieldNodes) {
-            const destNode = fieldNode.getElementsByTagName('dest')[0];
-            const notesNode = fieldNode.getElementsByTagName('notes')[0];
-            const jiraNode = fieldNode.getElementsByTagName('jira')[0];
-            const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
-
-            // Get the complete text content between dest tags
-            const destContent = destNode ? destNode.innerHTML : '';
+        for (let i = 0; i < fieldNodes.length; i++) {
+            const fieldNode = fieldNodes[i];
+            const destContent = getTagContent(xmlString, 'dest', fieldNode);
 
             mappings.push({
-                fieldName: destContent, // Use the complete content without trimming
+                fieldName: destContent,
                 source: fieldNode.getAttribute('source') || '',
-                mappingType: mappingTypeNode ? mappingTypeNode.textContent.trim() : 'NONE',
-                notes: notesNode ? notesNode.textContent.trim() : '',
-                tickets: jiraNode ? jiraNode.textContent.trim() : ''
+                mappingType: getNodeTextContent(fieldNode, 'mapping-type') || 'NONE',
+                notes: getNodeTextContent(fieldNode, 'notes') || '',
+                tickets: getNodeTextContent(fieldNode, 'jira') || ''
             });
         }
 
         return mappings;
+    }
+
+    // Helper function to get exact content between tags
+    function getTagContent(xmlString, tagName, contextNode) {
+        const serializer = new XMLSerializer();
+        const nodeString = serializer.serializeToString(contextNode);
+
+        const regex = new RegExp(`<${tagName}>(.*?)</${tagName}>`, 's');
+        const match = nodeString.match(regex);
+        return match ? match[1] : '';
+    }
+
+    // Helper function to get text content of a child node
+    function getNodeTextContent(parentNode, tagName) {
+        const node = parentNode.getElementsByTagName(tagName)[0];
+        return node ? node.textContent : '';
     }
 
     // Populate table with mapping data
@@ -178,7 +153,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Add new row
-    // Add new row
     document.getElementById('addRowBtn').addEventListener('click', function() {
         const newMapping = {
             fieldName: '',
@@ -218,7 +192,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Generate XML from mapping data
-    // Update the generateXML function to preserve the field name exactly as is
     function generateXML(mappings) {
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
 
@@ -226,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
             xml += '  <field';
             xml += ` source="${escapeXML(mapping.source)}"`;
             xml += '>\n';
-            xml += `    <dest>${mapping.fieldName}</dest>\n`; // Don't escape the field name as it may contain valid XML
+            xml += `    <dest>${mapping.fieldName}</dest>\n`;  // Don't escape the field name
             xml += `    <mapping-type>${escapeXML(mapping.mappingType)}</mapping-type>\n`;
             if (mapping.notes) {
                 xml += `    <notes>${escapeXML(mapping.notes)}</notes>\n`;
