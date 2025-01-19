@@ -129,67 +129,93 @@ function populateTable(mappings) {
 
     // Create table row for mapping
     function createTableRow(mapping, index) {
-    const row = document.createElement('tr');
+        const row = document.createElement('tr');
 
-    // Create cells individually for better control
-    const numberCell = document.createElement('td');
-    numberCell.className = 'text-center';
-    numberCell.textContent = index + 1;
+        // Number cell
+        const numberCell = document.createElement('td');
+        numberCell.className = 'text-center';
+        numberCell.textContent = index + 1;
+        row.appendChild(numberCell);
 
-    const fieldNameCell = document.createElement('td');
-    const fieldNameInput = document.createElement('input');
-    fieldNameInput.type = 'text';
-    fieldNameInput.className = 'form-control font-monospace';
-    fieldNameInput.value = mapping.fieldName;
-    fieldNameInput.dataset.field = 'fieldName';
-    fieldNameInput.dataset.index = index;
-    fieldNameCell.appendChild(fieldNameInput);
+        // Field Name cell
+        const fieldNameCell = document.createElement('td');
+        const fieldNameInput = document.createElement('input');
+        fieldNameInput.type = 'text';
+        fieldNameInput.className = 'form-control font-monospace';
+        fieldNameInput.value = mapping.fieldName;
+        fieldNameInput.dataset.field = 'fieldName';
+        fieldNameInput.dataset.index = index;
+        fieldNameCell.appendChild(fieldNameInput);
+        row.appendChild(fieldNameCell);
 
-    // Build the rest of the row
-    const rowContent = `
-        <td>
-            <input type="text" class="form-control" value="${escapeHtml(mapping.source)}" 
-                   data-field="source" data-index="${index}">
-        </td>
-        <td>
-            <select class="form-select" data-field="mappingType" data-index="${index}">
-                ${MAPPING_TYPES.map(type => `
-                    <option value="${type}" ${mapping.mappingType === type ? 'selected' : ''}>
-                        ${type}
-                    </option>
-                `).join('')}
-            </select>
-        </td>
-        <td>
-            <textarea class="form-control" data-field="notes" data-index="${index}" 
-                     rows="2">${escapeHtml(mapping.notes)}</textarea>
-        </td>
-        <td>
-            <input type="text" class="form-control" value="${escapeHtml(mapping.tickets)}" 
-                   data-field="tickets" data-index="${index}">
-        </td>
-        <td class="text-center">
-            <button class="btn btn-danger btn-sm" onclick="deleteRow(${index})">Delete</button>
-        </td>
-    `;
+        // Source cell
+        const sourceCell = document.createElement('td');
+        const sourceInput = document.createElement('input');
+        sourceInput.type = 'text';
+        sourceInput.className = 'form-control';
+        sourceInput.value = mapping.source;
+        sourceInput.dataset.field = 'source';
+        sourceInput.dataset.index = index;
+        sourceCell.appendChild(sourceInput);
+        row.appendChild(sourceCell);
 
-    row.appendChild(numberCell);
-    row.appendChild(fieldNameCell);
+        // Mapping Type cell
+        const mappingTypeCell = document.createElement('td');
+        const mappingTypeSelect = document.createElement('select');
+        mappingTypeSelect.className = 'form-select';
+        mappingTypeSelect.dataset.field = 'mappingType';
+        mappingTypeSelect.dataset.index = index;
+        MAPPING_TYPES.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            if (mapping.mappingType === type) {
+                option.selected = true;
+            }
+            mappingTypeSelect.appendChild(option);
+        });
+        mappingTypeCell.appendChild(mappingTypeSelect);
+        row.appendChild(mappingTypeCell);
 
-    // Add the rest of the content
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = rowContent;
-    while (tempDiv.firstChild) {
-        row.appendChild(tempDiv.firstChild);
+        // Notes cell
+        const notesCell = document.createElement('td');
+        const notesTextarea = document.createElement('textarea');
+        notesTextarea.className = 'form-control';
+        notesTextarea.value = mapping.notes;
+        notesTextarea.dataset.field = 'notes';
+        notesTextarea.dataset.index = index;
+        notesTextarea.rows = 2;
+        notesCell.appendChild(notesTextarea);
+        row.appendChild(notesCell);
+
+        // Tickets cell
+        const ticketsCell = document.createElement('td');
+        const ticketsInput = document.createElement('input');
+        ticketsInput.type = 'text';
+        ticketsInput.className = 'form-control';
+        ticketsInput.value = mapping.tickets;
+        ticketsInput.dataset.field = 'tickets';
+        ticketsInput.dataset.index = index;
+        ticketsCell.appendChild(ticketsInput);
+        row.appendChild(ticketsCell);
+
+        // Actions cell
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'text-center';
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'btn btn-danger btn-sm';
+        deleteButton.textContent = 'Delete';
+        deleteButton.onclick = () => deleteRow(index);
+        actionsCell.appendChild(deleteButton);
+        row.appendChild(actionsCell);
+
+        // Add event listeners for input changes
+        row.querySelectorAll('input, select, textarea').forEach(input => {
+            input.addEventListener('change', handleInputChange);
+        });
+
+        return row;
     }
-
-    // Add event listeners for input changes
-    row.querySelectorAll('input, select, textarea').forEach(input => {
-        input.addEventListener('change', handleInputChange);
-    });
-
-    return row;
-}
 
 // Helper function to safely escape HTML
 function escapeHtml(unsafe) {
