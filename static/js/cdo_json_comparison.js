@@ -152,84 +152,86 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function displayValueDifferences(data) {
-        currentDifferenceData = data;
-        const tbody = document.getElementById('value-differences-body');
-        tbody.innerHTML = '';
+    currentDifferenceData = data;
+    const tbody = document.getElementById('value-differences-body');
+    tbody.innerHTML = '';
 
-        if (!data.different_values || data.different_values.length === 0) {
-            const row = tbody.insertRow();
-            const cell = row.insertCell();
-            cell.colSpan = 4;
-            cell.className = 'text-center text-muted';
-            cell.textContent = 'No value differences found';
+    if (!data.different_values || data.different_values.length === 0) {
+        const row = tbody.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 4;
+        cell.className = 'text-center text-muted';
+        cell.textContent = 'No value differences found';
+        return;
+    }
+
+    const showAllChecked = document.getElementById('showAllFields').checked;
+    const removeUniqueChecked = document.getElementById('removeUniqueFields').checked;
+
+    // Create case-insensitive version of uniqueFields list
+    const uniqueFieldsLower = window.uniqueFieldsConfig.uniqueFields.map(field => field.toLowerCase());
+
+    data.different_values.forEach(diff => {
+        // Skip excluded fields unless "Show All" is checked
+        if (exclusionList.has(diff.path) && !showAllChecked) {
             return;
         }
 
-        const showAllChecked = document.getElementById('showAllFields').checked;
-        const removeUniqueChecked = document.getElementById('removeUniqueFields').checked;
+        // Case insensitive check for unique fields
+        if (removeUniqueChecked && uniqueFieldsLower.includes(diff.path.toLowerCase())) {
+            return;
+        }
 
-        // Create case-insensitive version of uniqueFields list
-        const uniqueFieldsLower = window.uniqueFieldsConfig.uniqueFields.map(field => field.toLowerCase());
+        // Create table row
+        const row = tbody.insertRow();
 
-        data.different_values.forEach(diff => {
-            // Skip excluded fields unless "Show All" is checked
-            if (exclusionList.has(diff.path) && !showAllChecked) {
-                return;
-            }
+        // Path cell
+        const pathCell = row.insertCell();
+        pathCell.className = 'font-monospace';
+        pathCell.textContent = diff.path;
 
-            // Case insensitive check for unique fields
-            if (removeUniqueChecked && uniqueFieldsLower.includes(diff.path.toLowerCase())) {
-                return;
-            }
+        // Value 1 cell
+        const value1Cell = row.insertCell();
+        value1Cell.className = 'font-monospace';
+        value1Cell.innerHTML = `<pre class="m-0"><code>${formatValue(diff.value1)}</code></pre>`;
 
-            const row = document.createElement('tr');
+        // Value 2 cell
+        const value2Cell = row.insertCell();
+        value2Cell.className = 'font-monospace';
+        value2Cell.innerHTML = `<pre class="m-0"><code>${formatValue(diff.value2)}</code></pre>`;
 
-            // Path cell
-            const pathCell = document.createElement('td');
-            pathCell.className = 'font-monospace';
-            pathCell.textContent = diff.path;
-            row.appendChild(pathCell);
+        // Exclusion checkbox cell
+        const checkboxCell = row.insertCell();
+        checkboxCell.className = 'text-center';
 
-            // Value 1 cell
-            const value1Cell = document.createElement('td');
-            value1Cell.className = 'font-monospace';
-            value1Cell.innerHTML = `<pre class="m-0"><code>${formatValue(diff.value1)}</code></pre>`;
-            row.appendChild(value1Cell);
+        // Create checkbox
+        const checkbox = document.createElement('input');
+        checkbox.setAttribute('type', 'checkbox');
+        checkbox.className = 'form-check-input mt-0';
+        checkbox.style.cursor = 'pointer';
+        checkbox.checked = exclusionList.has(diff.path);
 
-            // Value 2 cell
-            const value2Cell = document.createElement('td');
-            value2Cell.className = 'font-monospace';
-            value2Cell.innerHTML = `<pre class="m-0"><code>${formatValue(diff.value2)}</code></pre>`;
-            row.appendChild(value2Cell);
-
-            // Exclusion checkbox cell
-            const checkboxCell = document.createElement('td');
-            checkboxCell.className = 'text-center';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'form-check-input';
-            checkbox.checked = exclusionList.has(diff.path);
-            checkbox.addEventListener('change', (e) => {
-                const isChecked = e.target.checked;
-                if (isChecked) {
-                    exclusionList.add(diff.path);
-                    console.log('Field excluded:', diff.path); // Logging excluded field
-                    logExcludedFields(); // Log all excluded fields
-                    if (!showAllChecked) {
-                        row.remove(); // Immediately remove the row
-                    }
-                } else {
-                    exclusionList.delete(diff.path);
-                    console.log('Field un-excluded:', diff.path); // Logging un-excluded field
-                    logExcludedFields(); // Log all excluded fields
+        // Add event listener
+        checkbox.addEventListener('change', function(e) {
+            const isChecked = e.target.checked;
+            if (isChecked) {
+                exclusionList.add(diff.path);
+                console.log('Field excluded:', diff.path);
+                logExcludedFields();
+                if (!showAllChecked) {
+                    row.remove();
                 }
-            });
-            checkboxCell.appendChild(checkbox);
-            row.appendChild(checkboxCell);
-
-            tbody.appendChild(row);
+            } else {
+                exclusionList.delete(diff.path);
+                console.log('Field un-excluded:', diff.path);
+                logExcludedFields();
+            }
         });
-    }
+
+        // Add checkbox to cell
+        checkboxCell.appendChild(checkbox);
+    });
+}
 
     function formatValue(value) {
         if (value === null) return 'null';
