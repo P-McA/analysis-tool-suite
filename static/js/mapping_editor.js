@@ -46,13 +46,9 @@ document.addEventListener('DOMContentLoaded', function() {
         populateTable(currentMapping);
     }
 
-    // Extract mapping data from XML
-    // Extract mapping data from XML
-// Extract mapping data from XML
 function extractMappingData(xmlString) {
     const mappings = [];
 
-    // Get all field elements
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlString, "text/xml");
     const fieldNodes = xmlDoc.getElementsByTagName('field');
@@ -60,7 +56,7 @@ function extractMappingData(xmlString) {
     for (let i = 0; i < fieldNodes.length; i++) {
         const fieldNode = fieldNodes[i];
 
-        // Get the raw content of the dest tag using regex
+        // Get the raw content of dest tag
         const destMatch = new XMLSerializer()
             .serializeToString(fieldNode)
             .match(/<dest>([\s\S]*?)<\/dest>/);
@@ -72,10 +68,22 @@ function extractMappingData(xmlString) {
         const notesNode = fieldNode.getElementsByTagName('notes')[0];
         const jiraNode = fieldNode.getElementsByTagName('jira')[0];
 
+        // Get mapping type
+        const mappingType = mappingTypeNode ? mappingTypeNode.textContent : 'NONE';
+
+        // Get source content based on mapping type
+        let source = '';
+        if (mappingType === 'PASSED_THROUGH') {
+            const srcMatch = new XMLSerializer()
+                .serializeToString(fieldNode)
+                .match(/<src>([\s\S]*?)<\/src>/);
+            source = srcMatch ? srcMatch[1] : '';
+        }
+
         mappings.push({
             fieldName: fieldName,
-            source: fieldNode.getAttribute('source') || '',
-            mappingType: mappingTypeNode ? mappingTypeNode.textContent : 'NONE',
+            source: source,
+            mappingType: mappingType,
             notes: notesNode ? notesNode.textContent : '',
             tickets: jiraNode ? jiraNode.textContent : ''
         });
