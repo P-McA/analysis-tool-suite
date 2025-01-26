@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentMapping = null;
     let originalXmlStructure = null;
 
-    // Constants for mapping types
     const MAPPING_TYPES = [
         'AGGREGATED',
         'DEFAULTED',
@@ -17,7 +16,6 @@ document.addEventListener('DOMContentLoaded', function() {
         'NONE'
     ];
 
-    // Initialize dropzone
     const dropzone = new Dropzone("#xmlDropzone", {
         url: "/upload_mapping",
         autoProcessQueue: false,
@@ -27,7 +25,6 @@ document.addEventListener('DOMContentLoaded', function() {
         createImageThumbnails: false
     });
 
-    // Handle file addition
     dropzone.on("addedfile", function(file) {
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -40,7 +37,6 @@ document.addEventListener('DOMContentLoaded', function() {
         reader.readAsText(file);
     });
 
-    // Parse XML and display in editor
     function parseAndDisplayMapping(xmlString) {
         originalXmlStructure = xmlString;
         const parser = new DOMParser();
@@ -50,100 +46,242 @@ document.addEventListener('DOMContentLoaded', function() {
         populateTable(currentMapping);
     }
 
-    // Extract mapping data from XML
     function extractMappingData(xmlDoc) {
         const mappings = [];
         const fieldNodes = xmlDoc.getElementsByTagName('field');
 
         for (let i = 0; i < fieldNodes.length; i++) {
             const fieldNode = fieldNodes[i];
-            const destMatch = new XMLSerializer()
-                .serializeToString(fieldNode)
-                .match(/<dest>([\s\S]*?)<\/dest>/);
-            const fieldName = destMatch ? destMatch[1] : '';
+            const mapping = {
+                fieldName: getDestContent(fieldNode),
+                mappingType: getMappingType(fieldNode),
+                source: '',
+                notes: getNodeTextContent(fieldNode, 'notes'),
+                tickets: getJiraTickets(fieldNode)
+            };
 
-            const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
-            const notesNode = fieldNode.getElementsByTagName('notes')[0];
-            const jiraNodes = fieldNode.getElementsByTagName('jira');
-            const tickets = Array.from(jiraNodes).map(node => node.textContent).join('\n');
-
-            const mappingType = mappingTypeNode ? mappingTypeNode.textContent : 'NONE';
-
-            let source = '';
-            if (mappingType === 'PASSED_THROUGH') {
-                const srcMatch = new XMLSerializer()
-                    .serializeToString(fieldNode)
-                    .match(/<src>([\s\S]*?)<\/src>/);
-                source = srcMatch ? srcMatch[1] : '';
+            if (mapping.mappingType === 'MAPPED') {
+                mapping.mappedData = extractMappedData(fieldNode);
+            } else if (mapping.mappingType === 'PASSED_THROUGH') {
+                mapping.source = getSourceContent(fieldNode);
             }
 
-            mappings.push({
-                fieldName: fieldName,
-                source: source,
-                mappingType: mappingType,
-                notes: notesNode ? notesNode.textContent : '',
-                tickets: tickets
+            mappings.push(mapping);
+        }
+
+        return mappings.sort((a, b) => a.fieldName.localeCompare(b.fieldName));
+    }
+
+    function getDestContent(fieldNode) {
+        const destMatch = new XMLSerializer()
+            .serializeToString(fieldNode)
+            .match(/<dest>([\s\S]*?)<\/dest>/);
+        return destMatch ? destMatch[1] : '';
+    }
+
+    function getMappingType(fieldNode) {
+        const typeNode = fieldNode.getElementsByTagName('mapping-type')[0];
+        return typeNode ? typeNode.textContent : 'NONE';
+    }
+
+    function getSourceContent(fieldNode) {
+        const srcMatch = new XMLSerializer()
+            .serializeToString(fieldNode)
+            .match(/<src>([\s\S]*?)<\/src>/);
+        return srcMatch ? srcMatch[1] : '';
+    }
+
+    function getJiraTickets(fieldNode) {
+        const jiraNodes = fieldNode.getElementsByTagName('jira');
+        return Array.from(jiraNodes).map(node => node.textContent).join('\n');
+    }
+
+    function extractMappedData(fieldNode) {
+        const mapping = {
+            type: fieldNode.getElementsByTagName('ifelse').length > 0 ? 'conditional' : 'direct',
+            sources: [],
+            mappings: []
+        };
+
+        if (mapping.type === 'conditional') {
+            const ifNodes = fieldNode.getElementsByTagName('if');
+            Array.from(ifNodes).forEach(ifNode => {
+                const condition = {
+                    ref: getNodeTextContent(ifNode, 'ref'),
+                    sources: [],
+                    rows: []
+                };
+
+                const srcNodes = ifNode.getElementsByTagName('ctable')[0]
+                    .getElementsByTagName('cols')[0]
+                    .getElementsByTagName('src');
+                condition.sources = Array.from(srcNodes).map(src => src.textContent);
+
+                const rowNodes = ifNode.getElementsByTagName('row');
+                Array.from(rowNodes).forEach(row => {
+                    const values = Array.from(row.getElementsByTagName('value'))
+                        .map(val => val.textContent);
+                    condition.rows.push(values);
+                });
+
+                mapping.mappings.push(condition);
+            });
+        } else {
+            const ctable = fieldNode.getElementsByTagName('ctable')[0];
+            const srcNodes = ctable.getElementsByTagName('cols')[0]
+                .getElementsByTagName('src');
+            mapping.sources = Array.from(srcNodes).map(src => src.textContent);
+
+            const rowNodes = ctable.getElementsByTagName('row');
+            Array.from(rowNodes).forEach(row => {
+                const values = Array.from(row.getElementsByTagName('value'))
+                    .map(val => val.textContent);
+                mapping.mappings.push(values);
             });
         }
 
-        mappings.sort((a, b) => {
-            if (!a.fieldName) return 1;
-            if (!b.fieldName) return -1;
-            return a.fieldName.localeCompare(b.fieldName);
-        });
-
-        return mappings;
+        return mapping;
     }
-
-    // Populate table with mapping data
     function populateTable(mappings) {
         const tbody = document.getElementById('mappingTableBody');
         tbody.innerHTML = '';
-
         mappings.forEach((mapping, index) => {
             const row = createTableRow(mapping, index);
             tbody.appendChild(row);
         });
     }
 
-    // Create table row for mapping
     function createTableRow(mapping, index) {
         const row = document.createElement('tr');
 
         // Number cell
-        const numberCell = document.createElement('td');
-        numberCell.className = 'text-center';
-        numberCell.textContent = index + 1;
-        row.appendChild(numberCell);
+        row.appendChild(createCell('td', index + 1, 'text-center'));
 
         // Field Name cell
-        const fieldNameCell = document.createElement('td');
-        const fieldNameInput = document.createElement('input');
-        fieldNameInput.type = 'text';
-        fieldNameInput.className = 'form-control font-monospace';
-        fieldNameInput.value = mapping.fieldName;
-        fieldNameInput.dataset.field = 'fieldName';
-        fieldNameInput.dataset.index = index;
-        fieldNameCell.appendChild(fieldNameInput);
-        row.appendChild(fieldNameCell);
+        row.appendChild(createFieldNameCell(mapping, index));
 
-        // Source cell
-        const sourceCell = document.createElement('td');
-        const sourceInput = document.createElement('input');
-        sourceInput.type = 'text';
-        sourceInput.className = 'form-control';
-        sourceInput.value = mapping.source;
-        sourceInput.dataset.field = 'source';
-        sourceInput.dataset.index = index;
-        sourceCell.appendChild(sourceInput);
-        row.appendChild(sourceCell);
+        // Source/Mapping cell
+        if (mapping.mappingType === 'MAPPED') {
+            row.appendChild(createMappedCell(mapping.mappedData, index));
+        } else {
+            row.appendChild(createSourceCell(mapping, index));
+        }
 
         // Mapping Type cell
-        const mappingTypeCell = document.createElement('td');
-        const mappingTypeSelect = document.createElement('select');
-        mappingTypeSelect.className = 'form-select';
-        mappingTypeSelect.dataset.field = 'mappingType';
-        mappingTypeSelect.dataset.index = index;
+        row.appendChild(createMappingTypeCell(mapping, index));
+
+        // Notes cell
+        row.appendChild(createNotesCell(mapping, index));
+
+        // Tickets cell
+        row.appendChild(createTicketsCell(mapping, index));
+
+        // Actions cell
+        row.appendChild(createActionsCell(index));
+
+        return row;
+    }
+
+    function createCell(type, content, className = '') {
+        const cell = document.createElement(type);
+        if (className) cell.className = className;
+        if (content) cell.textContent = content;
+        return cell;
+    }
+
+    function createFieldNameCell(mapping, index) {
+        const cell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control font-monospace';
+        input.value = mapping.fieldName;
+        input.dataset.field = 'fieldName';
+        input.dataset.index = index;
+        input.addEventListener('change', handleInputChange);
+        cell.appendChild(input);
+        return cell;
+    }
+
+    function createMappedCell(mappedData, index) {
+        const cell = document.createElement('td');
+        const container = document.createElement('div');
+        container.className = 'mapped-data-container';
+
+        if (mappedData.type === 'conditional') {
+            mappedData.mappings.forEach(condition => {
+                const conditionDiv = document.createElement('div');
+                conditionDiv.className = 'condition-block mb-3';
+
+                const refDiv = document.createElement('div');
+                refDiv.className = 'ref-label mb-2';
+                refDiv.textContent = `Ref: ${condition.ref}`;
+                conditionDiv.appendChild(refDiv);
+
+                const table = createMappingTable(condition.sources, condition.rows);
+                conditionDiv.appendChild(table);
+                container.appendChild(conditionDiv);
+            });
+        } else {
+            const table = createMappingTable(mappedData.sources, mappedData.mappings);
+            container.appendChild(table);
+        }
+
+        cell.appendChild(container);
+        return cell;
+    }
+
+    function createMappingTable(sources, rows) {
+        const table = document.createElement('table');
+        table.className = 'table table-sm table-bordered mapping-table';
+
+        // Header row
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        sources.forEach(source => {
+            const th = document.createElement('th');
+            th.textContent = source;
+            headerRow.appendChild(th);
+        });
+        headerRow.appendChild(document.createElement('th')); // For output
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Value rows
+        const tbody = document.createElement('tbody');
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            row.forEach(value => {
+                const td = document.createElement('td');
+                td.textContent = value;
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+
+        return table;
+    }
+
+    function createSourceCell(mapping, index) {
+        const cell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control';
+        input.value = mapping.source;
+        input.dataset.field = 'source';
+        input.dataset.index = index;
+        input.addEventListener('change', handleInputChange);
+        cell.appendChild(input);
+        return cell;
+    }
+
+    function createMappingTypeCell(mapping, index) {
+        const cell = document.createElement('td');
+        const select = document.createElement('select');
+        select.className = 'form-select';
+        select.dataset.field = 'mappingType';
+        select.dataset.index = index;
+
         MAPPING_TYPES.forEach(type => {
             const option = document.createElement('option');
             option.value = type;
@@ -151,86 +289,68 @@ document.addEventListener('DOMContentLoaded', function() {
             if (mapping.mappingType === type) {
                 option.selected = true;
             }
-            mappingTypeSelect.appendChild(option);
-        });
-        mappingTypeCell.appendChild(mappingTypeSelect);
-        row.appendChild(mappingTypeCell);
-
-        // Notes cell
-        const notesCell = document.createElement('td');
-        const notesTextarea = document.createElement('textarea');
-        notesTextarea.className = 'form-control';
-        notesTextarea.value = mapping.notes;
-        notesTextarea.dataset.field = 'notes';
-        notesTextarea.dataset.index = index;
-        notesTextarea.rows = 2;
-        notesCell.appendChild(notesTextarea);
-        row.appendChild(notesCell);
-
-        // Tickets cell with tag display
-        const ticketsCell = createTicketsCell(mapping, index);
-        row.appendChild(ticketsCell);
-
-        // Actions cell
-        const actionsCell = document.createElement('td');
-        actionsCell.className = 'text-center';
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'btn btn-danger btn-sm';
-        deleteButton.textContent = 'Delete';
-        deleteButton.onclick = () => deleteRow(index);
-        actionsCell.appendChild(deleteButton);
-        row.appendChild(actionsCell);
-
-        // Add event listeners for input changes
-        row.querySelectorAll('input, select, textarea').forEach(input => {
-            if (input.dataset.field !== 'tickets') {
-                input.addEventListener('change', handleInputChange);
-            }
+            select.appendChild(option);
         });
 
-        return row;
+        select.addEventListener('change', handleInputChange);
+        cell.appendChild(select);
+        return cell;
     }
-    function createTicketsCell(mapping, index) {
-        const ticketsCell = document.createElement('td');
-        const ticketsContainer = document.createElement('div');
-        ticketsContainer.className = 'd-flex flex-wrap gap-2 mb-2';
 
-        const ticketsInput = document.createElement('input');
-        ticketsInput.type = 'text';
-        ticketsInput.className = 'form-control';
-        ticketsInput.placeholder = 'Add ticket...';
-        ticketsInput.dataset.field = 'tickets';
-        ticketsInput.dataset.index = index;
+    function createNotesCell(mapping, index) {
+        const cell = document.createElement('td');
+        const textarea = document.createElement('textarea');
+        textarea.className = 'form-control';
+        textarea.value = mapping.notes;
+        textarea.dataset.field = 'notes';
+        textarea.dataset.index = index;
+        textarea.rows = 2;
+        textarea.addEventListener('change', handleInputChange);
+        cell.appendChild(textarea);
+        return cell;
+    }
+
+    function createTicketsCell(mapping, index) {
+        const cell = document.createElement('td');
+        const container = document.createElement('div');
+        container.className = 'd-flex flex-wrap gap-2 mb-2';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control';
+        input.placeholder = 'Add ticket...';
+        input.dataset.field = 'tickets';
+        input.dataset.index = index;
 
         const tickets = mapping.tickets ? mapping.tickets.split('\n').filter(t => t.trim()) : [];
         tickets.forEach(ticket => {
-            ticketsContainer.appendChild(createTicketTag(ticket, index));
+            container.appendChild(createTicketTag(ticket, index));
         });
 
-        ticketsInput.addEventListener('blur', function() {
+        input.addEventListener('blur', function() {
             if (this.value.trim()) {
                 const ticket = this.value.trim();
-                ticketsContainer.appendChild(createTicketTag(ticket, index));
+                container.appendChild(createTicketTag(ticket, index));
                 updateTicketsValue(index);
                 this.value = '';
             }
         });
 
-        ticketsInput.addEventListener('keypress', function(e) {
+        input.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 if (this.value.trim()) {
                     const ticket = this.value.trim();
-                    ticketsContainer.appendChild(createTicketTag(ticket, index));
+                    container.appendChild(createTicketTag(ticket, index));
                     updateTicketsValue(index);
                     this.value = '';
                 }
             }
         });
 
-        ticketsCell.appendChild(ticketsContainer);
-        ticketsCell.appendChild(ticketsInput);
-        return ticketsCell;
+        cell.appendChild(container);
+        cell.appendChild(input);
+        return cell;
     }
 
     function createTicketTag(ticket, index) {
@@ -257,6 +377,15 @@ document.addEventListener('DOMContentLoaded', function() {
         currentMapping[index].tickets = tags.join('\n');
     }
 
+    function sortJiraTickets(tickets) {
+        return tickets.sort((a, b) => {
+            const [prefixA, numA] = a.split('-');
+            const [prefixB, numB] = b.split('-');
+            if (prefixA !== prefixB) return prefixA.localeCompare(prefixB);
+            return parseInt(numB) - parseInt(numA);
+        });
+    }
+
     function handleInputChange(event) {
         const field = event.target.dataset.field;
         const index = parseInt(event.target.dataset.index);
@@ -264,15 +393,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
         currentMapping[index][field] = value;
 
-        if (field === 'mappingType' && value !== 'PASSED_THROUGH') {
-            currentMapping[index].source = '';
-            const sourceInput = event.target.parentNode.parentNode.querySelector('[data-field="source"]');
-            if (sourceInput) {
-                sourceInput.value = '';
+        if (field === 'mappingType') {
+            if (value === 'MAPPED') {
+                currentMapping[index].mappedData = {
+                    type: 'direct',
+                    sources: [],
+                    mappings: []
+                };
+            } else if (value !== 'PASSED_THROUGH') {
+                currentMapping[index].source = '';
+                const sourceInput = event.target.parentNode.parentNode.querySelector('[data-field="source"]');
+                if (sourceInput) {
+                    sourceInput.value = '';
+                }
             }
+            populateTable(currentMapping);
         }
     }
-
     document.getElementById('addRowBtn').addEventListener('click', function() {
         const newMapping = {
             fieldName: '',
@@ -281,7 +418,6 @@ document.addEventListener('DOMContentLoaded', function() {
             notes: '',
             tickets: ''
         };
-
         currentMapping.unshift(newMapping);
         populateTable(currentMapping);
         window.scrollTo(0, 0);
@@ -299,166 +435,181 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('No mapping data to save');
             return;
         }
-
         const xmlContent = generateXML(currentMapping);
         downloadXML(xmlContent);
     });
 
     function generateXML(mappings) {
-    if (!originalXmlStructure) {
-        return generateDefaultXML(mappings);
+        if (!originalXmlStructure) {
+            return generateDefaultXML(mappings);
+        }
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
+        const fieldNodes = xmlDoc.getElementsByTagName('field');
+        const updatedFieldsMap = new Map(
+            mappings.map(mapping => [mapping.fieldName, mapping])
+        );
+
+        // Update existing fields
+        for (let i = 0; i < fieldNodes.length; i++) {
+            const fieldNode = fieldNodes[i];
+            const destNode = fieldNode.getElementsByTagName('dest')[0];
+            const fieldName = destNode ? destNode.textContent : '';
+
+            const updatedField = updatedFieldsMap.get(fieldName);
+            if (updatedField) {
+                updateFieldNode(fieldNode, updatedField);
+            }
+        }
+
+        // Add new fields
+        const existingFields = new Set(Array.from(fieldNodes).map(node =>
+            node.getElementsByTagName('dest')[0]?.textContent
+        ));
+
+        mappings.forEach(mapping => {
+            if (!existingFields.has(mapping.fieldName)) {
+                const newField = createNewFieldNode(xmlDoc, mapping);
+                xmlDoc.documentElement.appendChild(newField);
+            }
+        });
+
+        return formatXML(new XMLSerializer().serializeToString(xmlDoc));
     }
 
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
-    const fieldNodes = xmlDoc.getElementsByTagName('field');
-
-    const updatedFieldsMap = new Map(
-        mappings.map(mapping => [mapping.fieldName, mapping])
-    );
-
-    for (let i = 0; i < fieldNodes.length; i++) {
-        const fieldNode = fieldNodes[i];
-        const destNode = fieldNode.getElementsByTagName('dest')[0];
-        const fieldName = destNode ? destNode.textContent : '';
-
-        const updatedField = updatedFieldsMap.get(fieldName);
-        if (updatedField) {
-            updateFieldNode(fieldNode, updatedField);
-        }
-    }
-
-    // Process XML to add line breaks and indentation
-    let xmlString = new XMLSerializer().serializeToString(xmlDoc);
-    xmlString = formatXML(xmlString);
-    return xmlString;
-}
-
-function sortJiraTickets(tickets) {
-    return tickets.sort((a, b) => {
-        const numA = parseInt(a.split('-')[1]);
-        const numB = parseInt(b.split('-')[1]);
-        return numB - numA;
-    });
-}
-
-function formatXML(xml) {
-    let formatted = '';
-    let indent = '';
-    let inComment = false;
-
-    const lines = xml.split(/>\s*</);
-
-    lines.forEach((line, index) => {
-        // Handle comments
-        if (line.includes('<!--')) inComment = true;
-        if (line.includes('-->')) inComment = false;
-
-        if (index !== 0) line = '<' + line;
-        if (index !== lines.length-1) line = line + '>';
-
-        if (!inComment) {
-            if (line.includes('</')) indent = indent.slice(2);
-            formatted += indent + line + '\n';
-            if (!line.includes('</') && !line.includes('/>')) indent += '  ';
-        } else {
-            formatted += indent + line + '\n';
-        }
-    });
-
-    return formatted;
-}
     function updateFieldNode(fieldNode, updatedField) {
-    Array.from(fieldNode.getElementsByTagName('tickets')).forEach(node => node.remove());
+        // Handle tickets
+        Array.from(fieldNode.getElementsByTagName('tickets')).forEach(node => node.remove());
 
-    if (updatedField.tickets) {
-        const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
-        if (tickets.length > 0) {
+        if (updatedField.tickets) {
             const ticketsNode = fieldNode.ownerDocument.createElement('tickets');
+            const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
             sortJiraTickets(tickets).forEach(ticket => {
                 const jiraNode = fieldNode.ownerDocument.createElement('jira');
                 jiraNode.textContent = ticket;
+                ticketsNode.appendChild(document.createTextNode('\n      '));
                 ticketsNode.appendChild(jiraNode);
             });
+            ticketsNode.appendChild(document.createTextNode('\n    '));
+            fieldNode.appendChild(document.createTextNode('\n    '));
             fieldNode.appendChild(ticketsNode);
         }
-    }
 
-    const updateTags = {
-        'src': updatedField.source,
-        'mapping-type': updatedField.mappingType,
-        'notes': updatedField.notes
-    };
-
-    Object.entries(updateTags).forEach(([tagName, value]) => {
-        const node = fieldNode.getElementsByTagName(tagName)[0];
-        if (node && value !== undefined) {
-            node.textContent = value;
+        // Handle mapped data
+        if (updatedField.mappingType === 'MAPPED' && updatedField.mappedData) {
+            updateMappedNode(fieldNode, updatedField.mappedData);
         }
-    });
-}
 
-function createNewFieldNode(xmlDoc, mapping) {
-    const fieldNode = xmlDoc.createElement('field');
+        // Update other fields
+        const updateTags = {
+            'src': updatedField.source,
+            'mapping-type': updatedField.mappingType,
+            'notes': updatedField.notes
+        };
 
-    const destNode = xmlDoc.createElement('dest');
-    destNode.textContent = mapping.fieldName;
-    fieldNode.appendChild(destNode);
-
-    if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
-        const srcNode = xmlDoc.createElement('src');
-        srcNode.textContent = mapping.source;
-        fieldNode.appendChild(srcNode);
-    }
-
-    const mappingTypeNode = xmlDoc.createElement('mapping-type');
-    mappingTypeNode.textContent = mapping.mappingType;
-    fieldNode.appendChild(mappingTypeNode);
-
-    if (mapping.notes) {
-        const notesNode = xmlDoc.createElement('notes');
-        notesNode.textContent = mapping.notes;
-        fieldNode.appendChild(notesNode);
-    }
-
-    if (mapping.tickets) {
-        const tickets = mapping.tickets.split('\n').filter(t => t.trim());
-        if (tickets.length > 0) {
-            const ticketsNode = xmlDoc.createElement('tickets');
-            tickets.forEach(ticket => {
-                const jiraNode = xmlDoc.createElement('jira');
-                jiraNode.textContent = ticket;
-                ticketsNode.appendChild(jiraNode);
-            });
-            fieldNode.appendChild(ticketsNode);
-        }
-    }
-
-    return fieldNode;
-}
-
-    function generateDefaultXML(mappings) {
-        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
-        mappings.forEach(mapping => {
-            xml += '  <field>\n';
-            xml += `    <dest>${mapping.fieldName}</dest>\n`;
-            if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
-                xml += `    <src>${mapping.source}</src>\n`;
+        Object.entries(updateTags).forEach(([tagName, value]) => {
+            const node = fieldNode.getElementsByTagName(tagName)[0];
+            if (node && value !== undefined) {
+                node.textContent = value;
             }
-            xml += `    <mapping-type>${mapping.mappingType}</mapping-type>\n`;
-            if (mapping.notes) {
-                xml += `    <notes>${mapping.notes}</notes>\n`;
-            }
-            if (mapping.tickets) {
-                const tickets = mapping.tickets.split('\n').filter(t => t.trim());
-                tickets.forEach(ticket => {
-                    xml += `    <jira>${ticket}</jira>\n`;
-                });
-            }
-            xml += '  </field>\n';
         });
-        xml += '</mappings>';
-        return xml;
+    }
+
+    function updateMappedNode(fieldNode, mappedData) {
+        // Remove existing mapping structures
+        ['ifelse', 'ctable'].forEach(tag => {
+            Array.from(fieldNode.getElementsByTagName(tag)).forEach(node => node.remove());
+        });
+
+        if (mappedData.type === 'conditional') {
+            const ifelseNode = fieldNode.ownerDocument.createElement('ifelse');
+            mappedData.mappings.forEach(condition => {
+                const ifNode = createConditionalMapping(fieldNode.ownerDocument, condition);
+                ifelseNode.appendChild(ifNode);
+            });
+            fieldNode.appendChild(ifelseNode);
+        } else {
+            const ctableNode = createDirectMapping(fieldNode.ownerDocument, mappedData);
+            fieldNode.appendChild(ctableNode);
+        }
+    }
+
+    function createConditionalMapping(doc, condition) {
+        const ifNode = doc.createElement('if');
+        const refNode = doc.createElement('ref');
+        refNode.textContent = condition.ref;
+        ifNode.appendChild(refNode);
+
+        const ctableNode = doc.createElement('ctable');
+        const colsNode = doc.createElement('cols');
+        condition.sources.forEach(src => {
+            const srcNode = doc.createElement('src');
+            srcNode.textContent = src;
+            colsNode.appendChild(srcNode);
+        });
+        ctableNode.appendChild(colsNode);
+
+        condition.rows.forEach(row => {
+            const rowNode = doc.createElement('row');
+            row.forEach(value => {
+                const valueNode = doc.createElement('value');
+                valueNode.textContent = value;
+                rowNode.appendChild(valueNode);
+            });
+            ctableNode.appendChild(rowNode);
+        });
+
+        ifNode.appendChild(ctableNode);
+        return ifNode;
+    }
+
+    function createDirectMapping(doc, mappedData) {
+        const ctableNode = doc.createElement('ctable');
+        const colsNode = doc.createElement('cols');
+        mappedData.sources.forEach(src => {
+            const srcNode = doc.createElement('src');
+            srcNode.textContent = src;
+            colsNode.appendChild(srcNode);
+        });
+        ctableNode.appendChild(colsNode);
+
+        mappedData.mappings.forEach(row => {
+            const rowNode = doc.createElement('row');
+            row.forEach(value => {
+                const valueNode = doc.createElement('value');
+                valueNode.textContent = value;
+                rowNode.appendChild(valueNode);
+            });
+            ctableNode.appendChild(rowNode);
+        });
+
+        return ctableNode;
+    }
+
+    function formatXML(xml) {
+        let formatted = '';
+        let indent = '';
+        let inComment = false;
+
+        const lines = xml.split(/>\s*</);
+        lines.forEach((line, index) => {
+            if (line.includes('<!--')) inComment = true;
+            if (line.includes('-->')) inComment = false;
+
+            if (index !== 0) line = '<' + line;
+            if (index !== lines.length-1) line = line + '>';
+
+            if (!inComment) {
+                if (line.includes('</')) indent = indent.slice(2);
+                formatted += indent + line + '\n';
+                if (!line.includes('</') && !line.includes('/>')) indent += '  ';
+            } else {
+                formatted += indent + line + '\n';
+            }
+        });
+
+        return formatted;
     }
 
     function downloadXML(xmlContent) {
