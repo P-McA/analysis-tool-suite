@@ -334,45 +334,48 @@ document.addEventListener('DOMContentLoaded', function() {
     return xmlString;
 }
 
+function sortJiraTickets(tickets) {
+    return tickets.sort((a, b) => {
+        const numA = parseInt(a.split('-')[1]);
+        const numB = parseInt(b.split('-')[1]);
+        return numB - numA;
+    });
+}
+
 function formatXML(xml) {
     let formatted = '';
     let indent = '';
+    let inComment = false;
 
-    // Convert string to array of lines
     const lines = xml.split(/>\s*</);
 
     lines.forEach((line, index) => {
-        // Add back the removed brackets
+        // Handle comments
+        if (line.includes('<!--')) inComment = true;
+        if (line.includes('-->')) inComment = false;
+
         if (index !== 0) line = '<' + line;
         if (index !== lines.length-1) line = line + '>';
 
-        // Handle indentation
-        if (line.includes('</')) {
-            // Closing tag - reduce indent
-            indent = indent.slice(2);
-        }
-
-        // Add line with proper indentation
-        formatted += indent + line + '\n';
-
-        if (!line.includes('</') && !line.includes('/>')) {
-            // Opening tag - increase indent
-            indent += '  ';
+        if (!inComment) {
+            if (line.includes('</')) indent = indent.slice(2);
+            formatted += indent + line + '\n';
+            if (!line.includes('</') && !line.includes('/>')) indent += '  ';
+        } else {
+            formatted += indent + line + '\n';
         }
     });
 
     return formatted;
 }
-
     function updateFieldNode(fieldNode, updatedField) {
-    // Remove existing tickets node and all jira nodes
     Array.from(fieldNode.getElementsByTagName('tickets')).forEach(node => node.remove());
 
     if (updatedField.tickets) {
         const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
         if (tickets.length > 0) {
             const ticketsNode = fieldNode.ownerDocument.createElement('tickets');
-            tickets.forEach(ticket => {
+            sortJiraTickets(tickets).forEach(ticket => {
                 const jiraNode = fieldNode.ownerDocument.createElement('jira');
                 jiraNode.textContent = ticket;
                 ticketsNode.appendChild(jiraNode);
