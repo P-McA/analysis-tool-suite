@@ -335,16 +335,34 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 
 function formatXML(xml) {
-    // Add line breaks between jira tags within tickets
-    xml = xml.replace(/(<\/jira>)(<jira>)/g, '$1\n    $2');
+    let formatted = '';
+    let indent = '';
 
-    // Add line breaks and indent tickets tag content
-    xml = xml.replace(/<tickets>/, '<tickets>\n    ');
-    xml = xml.replace(/<\/tickets>/, '\n</tickets>');
+    // Convert string to array of lines
+    const lines = xml.split(/>\s*</);
 
-    return xml;
+    lines.forEach((line, index) => {
+        // Add back the removed brackets
+        if (index !== 0) line = '<' + line;
+        if (index !== lines.length-1) line = line + '>';
+
+        // Handle indentation
+        if (line.includes('</')) {
+            // Closing tag - reduce indent
+            indent = indent.slice(2);
+        }
+
+        // Add line with proper indentation
+        formatted += indent + line + '\n';
+
+        if (!line.includes('</') && !line.includes('/>')) {
+            // Opening tag - increase indent
+            indent += '  ';
+        }
+    });
+
+    return formatted;
 }
-
 
     function updateFieldNode(fieldNode, updatedField) {
     // Remove existing tickets node and all jira nodes
