@@ -57,23 +57,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         for (let i = 0; i < fieldNodes.length; i++) {
             const fieldNode = fieldNodes[i];
-
-            // Get the raw content of dest tag
             const destMatch = new XMLSerializer()
                 .serializeToString(fieldNode)
                 .match(/<dest>([\s\S]*?)<\/dest>/);
-
             const fieldName = destMatch ? destMatch[1] : '';
 
-            // Get other nodes content
             const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
             const notesNode = fieldNode.getElementsByTagName('notes')[0];
-            const jiraNode = fieldNode.getElementsByTagName('jira')[0];
+            const jiraNodes = fieldNode.getElementsByTagName('jira');
+            const tickets = Array.from(jiraNodes).map(node => node.textContent).join('\n');
 
-            // Get mapping type
             const mappingType = mappingTypeNode ? mappingTypeNode.textContent : 'NONE';
 
-            // Get source content based on mapping type
             let source = '';
             if (mappingType === 'PASSED_THROUGH') {
                 const srcMatch = new XMLSerializer()
@@ -87,11 +82,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 source: source,
                 mappingType: mappingType,
                 notes: notesNode ? notesNode.textContent : '',
-                tickets: jiraNode ? jiraNode.textContent : ''
+                tickets: tickets
             });
         }
 
-        // Sort mappings alphabetically by fieldName
         mappings.sort((a, b) => {
             if (!a.fieldName) return 1;
             if (!b.fieldName) return -1;
@@ -173,15 +167,8 @@ document.addEventListener('DOMContentLoaded', function() {
         notesCell.appendChild(notesTextarea);
         row.appendChild(notesCell);
 
-        // Tickets cell
-        const ticketsCell = document.createElement('td');
-        const ticketsInput = document.createElement('input');
-        ticketsInput.type = 'text';
-        ticketsInput.className = 'form-control';
-        ticketsInput.value = mapping.tickets;
-        ticketsInput.dataset.field = 'tickets';
-        ticketsInput.dataset.index = index;
-        ticketsCell.appendChild(ticketsInput);
+        // Tickets cell with tag display
+        const ticketsCell = createTicketsCell(mapping, index);
         row.appendChild(ticketsCell);
 
         // Actions cell
@@ -196,25 +183,89 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Add event listeners for input changes
         row.querySelectorAll('input, select, textarea').forEach(input => {
-            input.addEventListener('change', handleInputChange);
+            if (input.dataset.field !== 'tickets') {
+                input.addEventListener('change', handleInputChange);
+            }
         });
 
         return row;
     }
+    function createTicketsCell(mapping, index) {
+        const ticketsCell = document.createElement('td');
+        const ticketsContainer = document.createElement('div');
+        ticketsContainer.className = 'd-flex flex-wrap gap-2 mb-2';
 
-    // Handle input changes
+        const ticketsInput = document.createElement('input');
+        ticketsInput.type = 'text';
+        ticketsInput.className = 'form-control';
+        ticketsInput.placeholder = 'Add ticket...';
+        ticketsInput.dataset.field = 'tickets';
+        ticketsInput.dataset.index = index;
+
+        const tickets = mapping.tickets ? mapping.tickets.split('\n').filter(t => t.trim()) : [];
+        tickets.forEach(ticket => {
+            ticketsContainer.appendChild(createTicketTag(ticket, index));
+        });
+
+        ticketsInput.addEventListener('blur', function() {
+            if (this.value.trim()) {
+                const ticket = this.value.trim();
+                ticketsContainer.appendChild(createTicketTag(ticket, index));
+                updateTicketsValue(index);
+                this.value = '';
+            }
+        });
+
+        ticketsInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (this.value.trim()) {
+                    const ticket = this.value.trim();
+                    ticketsContainer.appendChild(createTicketTag(ticket, index));
+                    updateTicketsValue(index);
+                    this.value = '';
+                }
+            }
+        });
+
+        ticketsCell.appendChild(ticketsContainer);
+        ticketsCell.appendChild(ticketsInput);
+        return ticketsCell;
+    }
+
+    function createTicketTag(ticket, index) {
+        const tag = document.createElement('span');
+        tag.className = 'badge bg-secondary me-1 mb-1 p-2';
+        tag.textContent = ticket;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-close btn-close-white ms-2';
+        removeBtn.style.fontSize = '0.5em';
+        removeBtn.onclick = function(e) {
+            e.preventDefault();
+            tag.remove();
+            updateTicketsValue(index);
+        };
+
+        tag.appendChild(removeBtn);
+        return tag;
+    }
+
+    function updateTicketsValue(index) {
+        const cell = document.querySelector(`tr:nth-child(${index + 1}) td:nth-last-child(2)`);
+        const tags = Array.from(cell.querySelectorAll('.badge')).map(tag => tag.textContent.trim());
+        currentMapping[index].tickets = tags.join('\n');
+    }
+
     function handleInputChange(event) {
         const field = event.target.dataset.field;
         const index = parseInt(event.target.dataset.index);
         const value = event.target.value;
 
-        // Update the specific field in the mapping
         currentMapping[index][field] = value;
 
-        // If changing mapping type to non-PASSED_THROUGH, clear the source
         if (field === 'mappingType' && value !== 'PASSED_THROUGH') {
             currentMapping[index].source = '';
-            // Update the source input field in the UI
             const sourceInput = event.target.parentNode.parentNode.querySelector('[data-field="source"]');
             if (sourceInput) {
                 sourceInput.value = '';
@@ -222,7 +273,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Add new row
     document.getElementById('addRowBtn').addEventListener('click', function() {
         const newMapping = {
             fieldName: '',
@@ -232,17 +282,11 @@ document.addEventListener('DOMContentLoaded', function() {
             tickets: ''
         };
 
-        // Add new mapping to the beginning of the array
         currentMapping.unshift(newMapping);
-
-        // Repopulate the entire table
         populateTable(currentMapping);
-
-        // Optional: Scroll to top to ensure new row is visible
         window.scrollTo(0, 0);
     });
 
-    // Delete row
     window.deleteRow = function(index) {
         if (confirm('Are you sure you want to delete this mapping?')) {
             currentMapping.splice(index, 1);
@@ -250,7 +294,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // Save changes
     document.getElementById('saveChangesBtn').addEventListener('click', function() {
         if (!currentMapping) {
             alert('No mapping data to save');
@@ -261,7 +304,6 @@ document.addEventListener('DOMContentLoaded', function() {
         downloadXML(xmlContent);
     });
 
-    // Generate XML based on original structure
     function generateXML(mappings) {
         if (!originalXmlStructure) {
             return generateDefaultXML(mappings);
@@ -271,12 +313,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
         const fieldNodes = xmlDoc.getElementsByTagName('field');
 
-        // Create a map of field names to their new values
         const updatedFieldsMap = new Map(
             mappings.map(mapping => [mapping.fieldName, mapping])
         );
 
-        // Update each field in the original XML
         for (let i = 0; i < fieldNodes.length; i++) {
             const fieldNode = fieldNodes[i];
             const destNode = fieldNode.getElementsByTagName('dest')[0];
@@ -288,7 +328,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Add any new fields at the end
         const existingFields = new Set(Array.from(fieldNodes).map(node =>
             node.getElementsByTagName('dest')[0]?.textContent
         ));
@@ -304,12 +343,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFieldNode(fieldNode, updatedField) {
-        // Update only specific tags if they exist
+        Array.from(fieldNode.getElementsByTagName('jira')).forEach(node => node.remove());
+
+        if (updatedField.tickets) {
+            const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
+            tickets.forEach(ticket => {
+                const jiraNode = fieldNode.ownerDocument.createElement('jira');
+                jiraNode.textContent = ticket;
+                fieldNode.appendChild(jiraNode);
+            });
+        }
+
         const updateTags = {
             'src': updatedField.source,
             'mapping-type': updatedField.mappingType,
-            'notes': updatedField.notes,
-            'jira': updatedField.tickets
+            'notes': updatedField.notes
         };
 
         Object.entries(updateTags).forEach(([tagName, value]) => {
@@ -322,42 +370,63 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createNewFieldNode(xmlDoc, mapping) {
         const fieldNode = xmlDoc.createElement('field');
-        const tags = {
-            'dest': mapping.fieldName,
-            'src': mapping.source,
-            'mapping-type': mapping.mappingType,
-            'notes': mapping.notes,
-            'jira': mapping.tickets
-        };
 
-        Object.entries(tags).forEach(([tagName, value]) => {
-            if (value) {
-                const node = xmlDoc.createElement(tagName);
-                node.textContent = value;
-                fieldNode.appendChild(node);
-            }
-        });
+        const destNode = xmlDoc.createElement('dest');
+        destNode.textContent = mapping.fieldName;
+        fieldNode.appendChild(destNode);
+
+        if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
+            const srcNode = xmlDoc.createElement('src');
+            srcNode.textContent = mapping.source;
+            fieldNode.appendChild(srcNode);
+        }
+
+        const mappingTypeNode = xmlDoc.createElement('mapping-type');
+        mappingTypeNode.textContent = mapping.mappingType;
+        fieldNode.appendChild(mappingTypeNode);
+
+        if (mapping.notes) {
+            const notesNode = xmlDoc.createElement('notes');
+            notesNode.textContent = mapping.notes;
+            fieldNode.appendChild(notesNode);
+        }
+
+        if (mapping.tickets) {
+            const tickets = mapping.tickets.split('\n').filter(t => t.trim());
+            tickets.forEach(ticket => {
+                const jiraNode = xmlDoc.createElement('jira');
+                jiraNode.textContent = ticket;
+                fieldNode.appendChild(jiraNode);
+            });
+        }
 
         return fieldNode;
     }
 
-    // Fallback XML generation if original structure is not available
     function generateDefaultXML(mappings) {
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
         mappings.forEach(mapping => {
             xml += '  <field>\n';
             xml += `    <dest>${mapping.fieldName}</dest>\n`;
-            if (mapping.source) xml += `    <src>${mapping.source}</src>\n`;
+            if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
+                xml += `    <src>${mapping.source}</src>\n`;
+            }
             xml += `    <mapping-type>${mapping.mappingType}</mapping-type>\n`;
-            if (mapping.notes) xml += `    <notes>${mapping.notes}</notes>\n`;
-            if (mapping.tickets) xml += `    <jira>${mapping.tickets}</jira>\n`;
+            if (mapping.notes) {
+                xml += `    <notes>${mapping.notes}</notes>\n`;
+            }
+            if (mapping.tickets) {
+                const tickets = mapping.tickets.split('\n').filter(t => t.trim());
+                tickets.forEach(ticket => {
+                    xml += `    <jira>${ticket}</jira>\n`;
+                });
+            }
             xml += '  </field>\n';
         });
         xml += '</mappings>';
         return xml;
     }
 
-    // Download XML file
     function downloadXML(xmlContent) {
         const blob = new Blob([xmlContent], { type: 'application/xml' });
         const url = window.URL.createObjectURL(blob);
