@@ -3,6 +3,7 @@ Dropzone.autoDiscover = false;
 
 document.addEventListener('DOMContentLoaded', function() {
     let currentMapping = null;
+    let originalXmlStructure = null;
 
     // Constants for mapping types
     const MAPPING_TYPES = [
@@ -41,99 +42,75 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Parse XML and display in editor
     function parseAndDisplayMapping(xmlString) {
-        currentMapping = extractMappingData(xmlString);
+        originalXmlStructure = xmlString;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+        currentMapping = extractMappingData(xmlDoc);
         document.getElementById('editorSection').classList.remove('d-none');
         populateTable(currentMapping);
     }
 
-function extractMappingData(xmlString) {
-    const mappings = [];
+    // Extract mapping data from XML
+    function extractMappingData(xmlDoc) {
+        const mappings = [];
+        const fieldNodes = xmlDoc.getElementsByTagName('field');
 
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-    const fieldNodes = xmlDoc.getElementsByTagName('field');
+        for (let i = 0; i < fieldNodes.length; i++) {
+            const fieldNode = fieldNodes[i];
 
-    for (let i = 0; i < fieldNodes.length; i++) {
-        const fieldNode = fieldNodes[i];
-
-        // Get the raw content of dest tag
-        const destMatch = new XMLSerializer()
-            .serializeToString(fieldNode)
-            .match(/<dest>([\s\S]*?)<\/dest>/);
-
-        const fieldName = destMatch ? destMatch[1] : '';
-
-        // Get other nodes content
-        const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
-        const notesNode = fieldNode.getElementsByTagName('notes')[0];
-        const jiraNode = fieldNode.getElementsByTagName('jira')[0];
-
-        // Get mapping type
-        const mappingType = mappingTypeNode ? mappingTypeNode.textContent : 'NONE';
-
-        // Get source content based on mapping type
-        let source = '';
-        if (mappingType === 'PASSED_THROUGH') {
-            const srcMatch = new XMLSerializer()
+            // Get the raw content of dest tag
+            const destMatch = new XMLSerializer()
                 .serializeToString(fieldNode)
-                .match(/<src>([\s\S]*?)<\/src>/);
-            source = srcMatch ? srcMatch[1] : '';
+                .match(/<dest>([\s\S]*?)<\/dest>/);
+
+            const fieldName = destMatch ? destMatch[1] : '';
+
+            // Get other nodes content
+            const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
+            const notesNode = fieldNode.getElementsByTagName('notes')[0];
+            const jiraNode = fieldNode.getElementsByTagName('jira')[0];
+
+            // Get mapping type
+            const mappingType = mappingTypeNode ? mappingTypeNode.textContent : 'NONE';
+
+            // Get source content based on mapping type
+            let source = '';
+            if (mappingType === 'PASSED_THROUGH') {
+                const srcMatch = new XMLSerializer()
+                    .serializeToString(fieldNode)
+                    .match(/<src>([\s\S]*?)<\/src>/);
+                source = srcMatch ? srcMatch[1] : '';
+            }
+
+            mappings.push({
+                fieldName: fieldName,
+                source: source,
+                mappingType: mappingType,
+                notes: notesNode ? notesNode.textContent : '',
+                tickets: jiraNode ? jiraNode.textContent : ''
+            });
         }
 
-        mappings.push({
-            fieldName: fieldName,
-            source: source,
-            mappingType: mappingType,
-            notes: notesNode ? notesNode.textContent : '',
-            tickets: jiraNode ? jiraNode.textContent : ''
-        });
-    }
-
-    // Sort mappings alphabetically by fieldName
-    mappings.sort((a, b) => {
-        if (!a.fieldName) return 1;
-        if (!b.fieldName) return -1;
-        return a.fieldName.localeCompare(b.fieldName);
-    });
-
-    return mappings;
-}
-
-    // Helper function to get exact content between tags
-    function getTagContent(xmlString, tagName, contextNode) {
-        const serializer = new XMLSerializer();
-        const nodeString = serializer.serializeToString(contextNode);
-
-        const regex = new RegExp(`<${tagName}>(.*?)</${tagName}>`, 's');
-        const match = nodeString.match(regex);
-        return match ? match[1] : '';
-    }
-
-    // Helper function to get text content of a child node
-    function getNodeTextContent(parentNode, tagName) {
-        const node = parentNode.getElementsByTagName(tagName)[0];
-        return node ? node.textContent : '';
-    }
-
-    // Update the populateTable function to sort mappings
-function populateTable(mappings) {
-    const tbody = document.getElementById('mappingTableBody');
-    tbody.innerHTML = '';
-
-    // Sort the mappings array if it's not a new row being added at the top
-    if (!mappings[0] || mappings[0].fieldName) {
+        // Sort mappings alphabetically by fieldName
         mappings.sort((a, b) => {
             if (!a.fieldName) return 1;
             if (!b.fieldName) return -1;
             return a.fieldName.localeCompare(b.fieldName);
         });
+
+        return mappings;
     }
 
-    mappings.forEach((mapping, index) => {
-        const row = createTableRow(mapping, index);
-        tbody.appendChild(row);
-    });
-}
+    // Populate table with mapping data
+    function populateTable(mappings) {
+        const tbody = document.getElementById('mappingTableBody');
+        tbody.innerHTML = '';
+
+        mappings.forEach((mapping, index) => {
+            const row = createTableRow(mapping, index);
+            tbody.appendChild(row);
+        });
+    }
 
     // Create table row for mapping
     function createTableRow(mapping, index) {
@@ -225,24 +202,24 @@ function populateTable(mappings) {
         return row;
     }
 
-// Helper function to safely escape HTML
-function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
     // Handle input changes
     function handleInputChange(event) {
         const field = event.target.dataset.field;
         const index = parseInt(event.target.dataset.index);
         const value = event.target.value;
 
+        // Update the specific field in the mapping
         currentMapping[index][field] = value;
+
+        // If changing mapping type to non-PASSED_THROUGH, clear the source
+        if (field === 'mappingType' && value !== 'PASSED_THROUGH') {
+            currentMapping[index].source = '';
+            // Update the source input field in the UI
+            const sourceInput = event.target.parentNode.parentNode.querySelector('[data-field="source"]');
+            if (sourceInput) {
+                sourceInput.value = '';
+            }
+        }
     }
 
     // Add new row
@@ -284,41 +261,100 @@ function escapeHtml(unsafe) {
         downloadXML(xmlContent);
     });
 
-    // Generate XML from mapping data
+    // Generate XML based on original structure
     function generateXML(mappings) {
-        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
+        if (!originalXmlStructure) {
+            return generateDefaultXML(mappings);
+        }
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
+        const fieldNodes = xmlDoc.getElementsByTagName('field');
+
+        // Create a map of field names to their new values
+        const updatedFieldsMap = new Map(
+            mappings.map(mapping => [mapping.fieldName, mapping])
+        );
+
+        // Update each field in the original XML
+        for (let i = 0; i < fieldNodes.length; i++) {
+            const fieldNode = fieldNodes[i];
+            const destNode = fieldNode.getElementsByTagName('dest')[0];
+            const fieldName = destNode ? destNode.textContent : '';
+
+            const updatedField = updatedFieldsMap.get(fieldName);
+            if (updatedField) {
+                updateFieldNode(fieldNode, updatedField);
+            }
+        }
+
+        // Add any new fields at the end
+        const existingFields = new Set(Array.from(fieldNodes).map(node =>
+            node.getElementsByTagName('dest')[0]?.textContent
+        ));
 
         mappings.forEach(mapping => {
-            xml += '  <field';
-            xml += ` source="${escapeXML(mapping.source)}"`;
-            xml += '>\n';
-            xml += `    <dest>${mapping.fieldName}</dest>\n`;  // Don't escape the field name
-            xml += `    <mapping-type>${escapeXML(mapping.mappingType)}</mapping-type>\n`;
-            if (mapping.notes) {
-                xml += `    <notes>${escapeXML(mapping.notes)}</notes>\n`;
+            if (!existingFields.has(mapping.fieldName)) {
+                const newField = createNewFieldNode(xmlDoc, mapping);
+                xmlDoc.documentElement.appendChild(newField);
             }
-            if (mapping.tickets) {
-                xml += `    <jira>${escapeXML(mapping.tickets)}</jira>\n`;
-            }
-            xml += '  </field>\n';
         });
 
-        xml += '</mappings>';
-        return xml;
+        return new XMLSerializer().serializeToString(xmlDoc);
     }
 
-    // Escape XML special characters
-    function escapeXML(str) {
-        if (!str) return '';
-        return str.replace(/[<>&'"]/g, function(c) {
-            switch (c) {
-                case '<': return '&lt;';
-                case '>': return '&gt;';
-                case '&': return '&amp;';
-                case '\'': return '&apos;';
-                case '"': return '&quot;';
+    function updateFieldNode(fieldNode, updatedField) {
+        // Update only specific tags if they exist
+        const updateTags = {
+            'src': updatedField.source,
+            'mapping-type': updatedField.mappingType,
+            'notes': updatedField.notes,
+            'jira': updatedField.tickets
+        };
+
+        Object.entries(updateTags).forEach(([tagName, value]) => {
+            const node = fieldNode.getElementsByTagName(tagName)[0];
+            if (node && value !== undefined) {
+                node.textContent = value;
             }
         });
+    }
+
+    function createNewFieldNode(xmlDoc, mapping) {
+        const fieldNode = xmlDoc.createElement('field');
+        const tags = {
+            'dest': mapping.fieldName,
+            'src': mapping.source,
+            'mapping-type': mapping.mappingType,
+            'notes': mapping.notes,
+            'jira': mapping.tickets
+        };
+
+        Object.entries(tags).forEach(([tagName, value]) => {
+            if (value) {
+                const node = xmlDoc.createElement(tagName);
+                node.textContent = value;
+                fieldNode.appendChild(node);
+            }
+        });
+
+        return fieldNode;
+    }
+
+    // Fallback XML generation if original structure is not available
+    function generateDefaultXML(mappings) {
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
+        mappings.forEach(mapping => {
+            xml += '  <field>\n';
+            xml += `    <dest>${mapping.fieldName}</dest>\n`;
+            if (mapping.source) xml += `    <src>${mapping.source}</src>\n`;
+            xml += `    <mapping-type>${mapping.mappingType}</mapping-type>\n`;
+            if (mapping.notes) xml += `    <notes>${mapping.notes}</notes>\n`;
+            if (mapping.tickets) xml += `    <jira>${mapping.tickets}</jira>\n`;
+            xml += '  </field>\n';
+        });
+        xml += '</mappings>';
+        return xml;
     }
 
     // Download XML file
