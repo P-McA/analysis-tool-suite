@@ -305,42 +305,46 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function generateXML(mappings) {
-        if (!originalXmlStructure) {
-            return generateDefaultXML(mappings);
-        }
-
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
-        const fieldNodes = xmlDoc.getElementsByTagName('field');
-
-        const updatedFieldsMap = new Map(
-            mappings.map(mapping => [mapping.fieldName, mapping])
-        );
-
-        for (let i = 0; i < fieldNodes.length; i++) {
-            const fieldNode = fieldNodes[i];
-            const destNode = fieldNode.getElementsByTagName('dest')[0];
-            const fieldName = destNode ? destNode.textContent : '';
-
-            const updatedField = updatedFieldsMap.get(fieldName);
-            if (updatedField) {
-                updateFieldNode(fieldNode, updatedField);
-            }
-        }
-
-        const existingFields = new Set(Array.from(fieldNodes).map(node =>
-            node.getElementsByTagName('dest')[0]?.textContent
-        ));
-
-        mappings.forEach(mapping => {
-            if (!existingFields.has(mapping.fieldName)) {
-                const newField = createNewFieldNode(xmlDoc, mapping);
-                xmlDoc.documentElement.appendChild(newField);
-            }
-        });
-
-        return new XMLSerializer().serializeToString(xmlDoc);
+    if (!originalXmlStructure) {
+        return generateDefaultXML(mappings);
     }
+
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(originalXmlStructure, "text/xml");
+    const fieldNodes = xmlDoc.getElementsByTagName('field');
+
+    const updatedFieldsMap = new Map(
+        mappings.map(mapping => [mapping.fieldName, mapping])
+    );
+
+    for (let i = 0; i < fieldNodes.length; i++) {
+        const fieldNode = fieldNodes[i];
+        const destNode = fieldNode.getElementsByTagName('dest')[0];
+        const fieldName = destNode ? destNode.textContent : '';
+
+        const updatedField = updatedFieldsMap.get(fieldName);
+        if (updatedField) {
+            updateFieldNode(fieldNode, updatedField);
+        }
+    }
+
+    // Process XML to add line breaks and indentation
+    let xmlString = new XMLSerializer().serializeToString(xmlDoc);
+    xmlString = formatXML(xmlString);
+    return xmlString;
+}
+
+function formatXML(xml) {
+    // Add line breaks between jira tags within tickets
+    xml = xml.replace(/(<\/jira>)(<jira>)/g, '$1\n    $2');
+
+    // Add line breaks and indent tickets tag content
+    xml = xml.replace(/<tickets>/, '<tickets>\n    ');
+    xml = xml.replace(/<\/tickets>/, '\n</tickets>');
+
+    return xml;
+}
+
 
     function updateFieldNode(fieldNode, updatedField) {
     // Remove existing tickets node and all jira nodes
