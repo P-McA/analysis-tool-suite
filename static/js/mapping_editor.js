@@ -46,113 +46,83 @@ document.addEventListener('DOMContentLoaded', function() {
         populateTable(currentMapping);
     }
 
-    function extractMappingData(xmlDoc) {
-        const mappings = [];
-        const fieldNodes = xmlDoc.getElementsByTagName('field');
+    function extractMappedData(fieldNode) {
+    try {
+        const mapping = {
+            type: fieldNode.getElementsByTagName('ifelse').length > 0 ? 'conditional' : 'direct',
+            sources: [],
+            mappings: []
+        };
 
-        for (let i = 0; i < fieldNodes.length; i++) {
-            const fieldNode = fieldNodes[i];
-            const mapping = {
-                fieldName: getDestContent(fieldNode),
-                mappingType: getMappingType(fieldNode),
-                source: '',
-                notes: getNodeTextContent(fieldNode, 'notes'),
-                tickets: getJiraTickets(fieldNode)
-            };
-
-            if (mapping.mappingType === 'MAPPED') {
-                mapping.mappedData = extractMappedData(fieldNode);
-            } else if (mapping.mappingType === 'PASSED_THROUGH') {
-                mapping.source = getSourceContent(fieldNode);
+        if (mapping.type === 'conditional') {
+            const ifNodes = fieldNode.getElementsByTagName('if');
+            if (!ifNodes.length) {
+                console.warn('Conditional mapping found but no if nodes present');
+                return mapping;
             }
 
-            mappings.push(mapping);
+            Array.from(ifNodes).forEach(ifNode => {
+                try {
+                    const condition = {
+                        ref: getNodeTextContent(ifNode, 'ref'),
+                        sources: [],
+                        rows: []
+                    };
+
+                    const ctableNode = ifNode.getElementsByTagName('ctable')[0];
+                    if (!ctableNode) {
+                        console.warn(`No ctable found for condition with ref: ${condition.ref}`);
+                        return;
+                    }
+
+                    extractTableData(ctableNode, condition);
+                    if (condition.sources.length > 0 || condition.rows.length > 0) {
+                        mapping.mappings.push(condition);
+                    }
+                } catch (err) {
+                    console.error('Error processing conditional mapping:', err);
+                }
+            });
+        } else {
+            const ctable = fieldNode.getElementsByTagName('ctable')[0];
+            if (ctable) {
+                extractTableData(ctable, mapping);
+            }
         }
 
-        return mappings.sort((a, b) => a.fieldName.localeCompare(b.fieldName));
+        return mapping;
+    } catch (err) {
+        console.error('Error in extractMappedData:', err);
+        return { type: 'direct', sources: [], mappings: [] };
     }
-
-    function getDestContent(fieldNode) {
-        const destMatch = new XMLSerializer()
-            .serializeToString(fieldNode)
-            .match(/<dest>([\s\S]*?)<\/dest>/);
-        return destMatch ? destMatch[1] : '';
-    }
-
-    function getMappingType(fieldNode) {
-        const typeNode = fieldNode.getElementsByTagName('mapping-type')[0];
-        return typeNode ? typeNode.textContent : 'NONE';
-    }
-    function getNodeTextContent(parentNode, tagName) {
-    const node = parentNode.getElementsByTagName(tagName)[0];
-    return node ? node.textContent : '';
 }
-    function getSourceContent(fieldNode) {
-        const srcMatch = new XMLSerializer()
-            .serializeToString(fieldNode)
-            .match(/<src>([\s\S]*?)<\/src>/);
-        return srcMatch ? srcMatch[1] : '';
-    }
+function extractTableData(ctableNode, target) {
+    try {
+        const colsNode = ctableNode.getElementsByTagName('cols')[0];
+        if (colsNode) {
+            const srcNodes = colsNode.getElementsByTagName('src');
+            target.sources = Array.from(srcNodes)
+                .map(src => src.textContent)
+                .filter(Boolean);
+        }
 
-    function getJiraTickets(fieldNode) {
-        const jiraNodes = fieldNode.getElementsByTagName('jira');
-        return Array.from(jiraNodes).map(node => node.textContent).join('\n');
-    }
-
-    function extractMappedData(fieldNode) {
-    const mapping = {
-        type: fieldNode.getElementsByTagName('ifelse').length > 0 ? 'conditional' : 'direct',
-        sources: [],
-        mappings: []
-    };
-
-    if (mapping.type === 'conditional') {
-        const ifNodes = fieldNode.getElementsByTagName('if');
-        Array.from(ifNodes).forEach(ifNode => {
-            const condition = {
-                ref: getNodeTextContent(ifNode, 'ref'),
-                sources: [],
-                rows: []
-            };
-
-            // Add null check for ctable
-            const ctableNode = ifNode.getElementsByTagName('ctable')[0];
-            if (ctableNode) {
-                const colsNode = ctableNode.getElementsByTagName('cols')[0];
-                if (colsNode) {
-                    const srcNodes = colsNode.getElementsByTagName('src');
-                    condition.sources = Array.from(srcNodes).map(src => src.textContent);
-                }
-
-                const rowNodes = ctableNode.getElementsByTagName('row');
-                Array.from(rowNodes).forEach(row => {
-                    const values = Array.from(row.getElementsByTagName('value'))
-                        .map(val => val.textContent);
-                    condition.rows.push(values);
-                });
-            }
-
-            mapping.mappings.push(condition);
-        });
-    } else {
-        const ctable = fieldNode.getElementsByTagName('ctable')[0];
-        if (ctable) {
-            const colsNode = ctable.getElementsByTagName('cols')[0];
-            if (colsNode) {
-                const srcNodes = colsNode.getElementsByTagName('src');
-                mapping.sources = Array.from(srcNodes).map(src => src.textContent);
-            }
-
-            const rowNodes = ctable.getElementsByTagName('row');
+        const rowNodes = ctableNode.getElementsByTagName('row');
+        if (rowNodes.length) {
             Array.from(rowNodes).forEach(row => {
-                const values = Array.from(row.getElementsByTagName('value'))
-                    .map(val => val.textContent);
-                mapping.mappings.push(values);
+                const valueNodes = row.getElementsByTagName('value');
+                if (valueNodes.length) {
+                    const values = Array.from(valueNodes)
+                        .map(val => val.textContent)
+                        .filter(Boolean);
+                    if (values.length) {
+                        target.rows ? target.rows.push(values) : target.mappings.push(values);
+                    }
+                }
             });
         }
+    } catch (err) {
+        console.error('Error extracting table data:', err);
     }
-
-    return mapping;
 }
     function populateTable(mappings) {
         const tbody = document.getElementById('mappingTableBody');
@@ -193,6 +163,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         return row;
     }
+    function createActionsCell(index) {
+    const cell = document.createElement('td');
+    cell.className = 'text-center';
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'btn btn-danger btn-sm';
+    deleteButton.textContent = 'Delete';
+    deleteButton.onclick = () => deleteRow(index);
+    cell.appendChild(deleteButton);
+    return cell;
+}
 
     function createCell(type, content, className = '') {
         const cell = document.createElement(type);
@@ -474,6 +454,77 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateFieldNode(fieldNode, updatedField);
             }
         }
+        function generateDefaultXML(mappings) {
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
+    mappings.forEach(mapping => {
+        xml += '  <field>\n';
+        xml += `    <dest>${mapping.fieldName}</dest>\n`;
+
+        if (mapping.mappingType === 'MAPPED' && mapping.mappedData) {
+            if (mapping.mappedData.type === 'conditional') {
+                xml += '    <ifelse>\n';
+                mapping.mappedData.mappings.forEach(condition => {
+                    xml += '      <if>\n';
+                    xml += `        <ref>${condition.ref}</ref>\n`;
+                    xml += '        <ctable>\n';
+                    xml += '          <cols>\n';
+                    condition.sources.forEach(src => {
+                        xml += `            <src>${src}</src>\n`;
+                    });
+                    xml += '          </cols>\n';
+                    condition.rows.forEach(row => {
+                        xml += '          <row>\n';
+                        row.forEach(value => {
+                            xml += `            <value>${value}</value>\n`;
+                        });
+                        xml += '          </row>\n';
+                    });
+                    xml += '        </ctable>\n';
+                    xml += '      </if>\n';
+                });
+                xml += '    </ifelse>\n';
+            } else {
+                xml += '    <ctable>\n';
+                xml += '      <cols>\n';
+                mapping.mappedData.sources.forEach(src => {
+                    xml += `        <src>${src}</src>\n`;
+                });
+                xml += '      </cols>\n';
+                mapping.mappedData.mappings.forEach(row => {
+                    xml += '      <row>\n';
+                    row.forEach(value => {
+                        xml += `        <value>${value}</value>\n`;
+                    });
+                    xml += '      </row>\n';
+                });
+                xml += '    </ctable>\n';
+            }
+        }
+
+        if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
+            xml += `    <src>${mapping.source}</src>\n`;
+        }
+
+        xml += `    <mapping-type>${mapping.mappingType}</mapping-type>\n`;
+
+        if (mapping.notes) {
+            xml += `    <notes>${mapping.notes}</notes>\n`;
+        }
+
+        if (mapping.tickets) {
+            xml += '    <tickets>\n';
+            const tickets = mapping.tickets.split('\n').filter(t => t.trim());
+            sortJiraTickets(tickets).forEach(ticket => {
+                xml += `      <jira>${ticket}</jira>\n`;
+            });
+            xml += '    </tickets>\n';
+        }
+
+        xml += '  </field>\n';
+    });
+    xml += '</mappings>';
+    return xml;
+}
 
         // Add new fields
         const existingFields = new Set(Array.from(fieldNodes).map(node =>
