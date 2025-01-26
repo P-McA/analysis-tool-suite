@@ -100,40 +100,48 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function extractMappedData(fieldNode) {
-        const mapping = {
-            type: fieldNode.getElementsByTagName('ifelse').length > 0 ? 'conditional' : 'direct',
-            sources: [],
-            mappings: []
-        };
+    const mapping = {
+        type: fieldNode.getElementsByTagName('ifelse').length > 0 ? 'conditional' : 'direct',
+        sources: [],
+        mappings: []
+    };
 
-        if (mapping.type === 'conditional') {
-            const ifNodes = fieldNode.getElementsByTagName('if');
-            Array.from(ifNodes).forEach(ifNode => {
-                const condition = {
-                    ref: getNodeTextContent(ifNode, 'ref'),
-                    sources: [],
-                    rows: []
-                };
+    if (mapping.type === 'conditional') {
+        const ifNodes = fieldNode.getElementsByTagName('if');
+        Array.from(ifNodes).forEach(ifNode => {
+            const condition = {
+                ref: getNodeTextContent(ifNode, 'ref'),
+                sources: [],
+                rows: []
+            };
 
-                const srcNodes = ifNode.getElementsByTagName('ctable')[0]
-                    .getElementsByTagName('cols')[0]
-                    .getElementsByTagName('src');
-                condition.sources = Array.from(srcNodes).map(src => src.textContent);
+            // Add null check for ctable
+            const ctableNode = ifNode.getElementsByTagName('ctable')[0];
+            if (ctableNode) {
+                const colsNode = ctableNode.getElementsByTagName('cols')[0];
+                if (colsNode) {
+                    const srcNodes = colsNode.getElementsByTagName('src');
+                    condition.sources = Array.from(srcNodes).map(src => src.textContent);
+                }
 
-                const rowNodes = ifNode.getElementsByTagName('row');
+                const rowNodes = ctableNode.getElementsByTagName('row');
                 Array.from(rowNodes).forEach(row => {
                     const values = Array.from(row.getElementsByTagName('value'))
                         .map(val => val.textContent);
                     condition.rows.push(values);
                 });
+            }
 
-                mapping.mappings.push(condition);
-            });
-        } else {
-            const ctable = fieldNode.getElementsByTagName('ctable')[0];
-            const srcNodes = ctable.getElementsByTagName('cols')[0]
-                .getElementsByTagName('src');
-            mapping.sources = Array.from(srcNodes).map(src => src.textContent);
+            mapping.mappings.push(condition);
+        });
+    } else {
+        const ctable = fieldNode.getElementsByTagName('ctable')[0];
+        if (ctable) {
+            const colsNode = ctable.getElementsByTagName('cols')[0];
+            if (colsNode) {
+                const srcNodes = colsNode.getElementsByTagName('src');
+                mapping.sources = Array.from(srcNodes).map(src => src.textContent);
+            }
 
             const rowNodes = ctable.getElementsByTagName('row');
             Array.from(rowNodes).forEach(row => {
@@ -142,9 +150,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 mapping.mappings.push(values);
             });
         }
-
-        return mapping;
     }
+
+    return mapping;
+}
     function populateTable(mappings) {
         const tbody = document.getElementById('mappingTableBody');
         tbody.innerHTML = '';
