@@ -343,65 +343,74 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFieldNode(fieldNode, updatedField) {
-        Array.from(fieldNode.getElementsByTagName('jira')).forEach(node => node.remove());
+    // Remove existing tickets node and all jira nodes
+    Array.from(fieldNode.getElementsByTagName('tickets')).forEach(node => node.remove());
 
-        if (updatedField.tickets) {
-            const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
+    if (updatedField.tickets) {
+        const tickets = updatedField.tickets.split('\n').filter(t => t.trim());
+        if (tickets.length > 0) {
+            const ticketsNode = fieldNode.ownerDocument.createElement('tickets');
             tickets.forEach(ticket => {
                 const jiraNode = fieldNode.ownerDocument.createElement('jira');
                 jiraNode.textContent = ticket;
-                fieldNode.appendChild(jiraNode);
+                ticketsNode.appendChild(jiraNode);
             });
+            fieldNode.appendChild(ticketsNode);
         }
-
-        const updateTags = {
-            'src': updatedField.source,
-            'mapping-type': updatedField.mappingType,
-            'notes': updatedField.notes
-        };
-
-        Object.entries(updateTags).forEach(([tagName, value]) => {
-            const node = fieldNode.getElementsByTagName(tagName)[0];
-            if (node && value !== undefined) {
-                node.textContent = value;
-            }
-        });
     }
 
-    function createNewFieldNode(xmlDoc, mapping) {
-        const fieldNode = xmlDoc.createElement('field');
+    const updateTags = {
+        'src': updatedField.source,
+        'mapping-type': updatedField.mappingType,
+        'notes': updatedField.notes
+    };
 
-        const destNode = xmlDoc.createElement('dest');
-        destNode.textContent = mapping.fieldName;
-        fieldNode.appendChild(destNode);
-
-        if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
-            const srcNode = xmlDoc.createElement('src');
-            srcNode.textContent = mapping.source;
-            fieldNode.appendChild(srcNode);
+    Object.entries(updateTags).forEach(([tagName, value]) => {
+        const node = fieldNode.getElementsByTagName(tagName)[0];
+        if (node && value !== undefined) {
+            node.textContent = value;
         }
+    });
+}
 
-        const mappingTypeNode = xmlDoc.createElement('mapping-type');
-        mappingTypeNode.textContent = mapping.mappingType;
-        fieldNode.appendChild(mappingTypeNode);
+function createNewFieldNode(xmlDoc, mapping) {
+    const fieldNode = xmlDoc.createElement('field');
 
-        if (mapping.notes) {
-            const notesNode = xmlDoc.createElement('notes');
-            notesNode.textContent = mapping.notes;
-            fieldNode.appendChild(notesNode);
-        }
+    const destNode = xmlDoc.createElement('dest');
+    destNode.textContent = mapping.fieldName;
+    fieldNode.appendChild(destNode);
 
-        if (mapping.tickets) {
-            const tickets = mapping.tickets.split('\n').filter(t => t.trim());
+    if (mapping.source && mapping.mappingType === 'PASSED_THROUGH') {
+        const srcNode = xmlDoc.createElement('src');
+        srcNode.textContent = mapping.source;
+        fieldNode.appendChild(srcNode);
+    }
+
+    const mappingTypeNode = xmlDoc.createElement('mapping-type');
+    mappingTypeNode.textContent = mapping.mappingType;
+    fieldNode.appendChild(mappingTypeNode);
+
+    if (mapping.notes) {
+        const notesNode = xmlDoc.createElement('notes');
+        notesNode.textContent = mapping.notes;
+        fieldNode.appendChild(notesNode);
+    }
+
+    if (mapping.tickets) {
+        const tickets = mapping.tickets.split('\n').filter(t => t.trim());
+        if (tickets.length > 0) {
+            const ticketsNode = xmlDoc.createElement('tickets');
             tickets.forEach(ticket => {
                 const jiraNode = xmlDoc.createElement('jira');
                 jiraNode.textContent = ticket;
-                fieldNode.appendChild(jiraNode);
+                ticketsNode.appendChild(jiraNode);
             });
+            fieldNode.appendChild(ticketsNode);
         }
-
-        return fieldNode;
     }
+
+    return fieldNode;
+}
 
     function generateDefaultXML(mappings) {
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
