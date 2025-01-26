@@ -83,7 +83,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const typeNode = fieldNode.getElementsByTagName('mapping-type')[0];
         return typeNode ? typeNode.textContent : 'NONE';
     }
-
+    function getNodeTextContent(parentNode, tagName) {
+    const node = parentNode.getElementsByTagName(tagName)[0];
+    return node ? node.textContent : '';
+}
     function getSourceContent(fieldNode) {
         const srcMatch = new XMLSerializer()
             .serializeToString(fieldNode)
