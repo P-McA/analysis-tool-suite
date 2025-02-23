@@ -66,3 +66,95 @@
 #editorSection:not(.d-none) {
     opacity: 1;
 }
+.table td.source-cell {
+    max-width: 400px;
+    padding: 0.75rem;
+}
+
+.mapping-grid {
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    width: 100%;
+}
+
+.mapping-grid th {
+    background-color: #f8f9fa;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+.mapping-grid td {
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.mapping-preview-container {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    margin-top: 0.5rem;
+}
+       .table th {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .table td {
+            vertical-align: middle;
+        }
+
+        .badge .btn-close {
+            font-size: 0.5em;
+            margin-left: 0.5em;
+        }
+
+        .mapping-preview {
+            font-size: 0.875em;
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+
+        /* Column widths */
+        .col-number { width: 2%; }
+        .col-field-name { width: 22%; }
+        .col-source { width: 25%; }
+        .col-mapping-type { width: 10%; }
+        .col-notes { width: 20%; }
+        .col-tickets { width: 15%; }
+        .col-actions { width: 5%; }
+
+        /* Custom scrollbar for table */
+        .table-responsive {
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        /* Button styling */
+        .btn-action {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .btn-action + .btn-action {
+            margin-left: 0.25rem;
+        }
+
+        /* Dropzone styling */
+        .dropzone {
+            border: 2px dashed #dee2e6;
+            border-radius: 0.5rem;
+            background: white;
+        }
+
+        .dropzone .dz-message {
+            margin: 2em 0;
+        }
