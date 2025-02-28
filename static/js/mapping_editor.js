@@ -1,23 +1,111 @@
 // Disable Dropzone auto discover
 Dropzone.autoDiscover = false;
 
+// Global state for current mapping data
+let currentMapping = null;
+let originalXmlStructure = null;
+let filteredMappings = null;
+let forceUpdate = null;
+
+// Constants for mapping types
+const MAPPING_TYPES = [
+    'AGGREGATED',
+    'DEFAULTED',
+    'DERIVED',
+    'ENRICHED',
+    'FORMATTED',
+    'MAPPED',
+    'PASSED_THROUGH',
+    'NONE'
+];
+
+// Set up force update function
+function setForceUpdate(updateFunction) {
+    console.log("Setting forceUpdate function");
+    forceUpdate = updateFunction;
+}
+
+// Update React components
+function updateReactComponents() {
+    console.log("Updating React components, currentMapping:", currentMapping);
+    if (forceUpdate) {
+        console.log("Calling forceUpdate");
+        forceUpdate(Date.now());
+    } else if (tableContainer && window.ReactDOM && window.EnhancedMappingTable) {
+        console.warn("forceUpdate not set, forcing re-render");
+        ReactDOM.render(
+            React.createElement(window.EnhancedMappingTable),
+            tableContainer
+        );
+    } else {
+        console.error("Cannot update components: missing dependencies or tableContainer");
+    }
+}
+
+// Initialize React components with retry logic
+function initializeReactComponents() {
+    console.log("Initializing React components, checking dependencies...");
+    const tableContainer = document.getElementById('mappingTableContainer');
+
+    // Check for DOM elements
+    if (!tableContainer) {
+        console.error("Missing DOM elements:", { tableContainer });
+        return;
+    }
+
+    // Check for React and ReactDOM
+    if (typeof ReactDOM === 'undefined' || typeof React === 'undefined') {
+        console.error("React or ReactDOM not loaded");
+        return;
+    }
+
+    // Check for custom components
+    if (!window.EnhancedMappingTable) {
+        console.error("Custom React components not loaded:", { EnhancedMappingTable: !!window.EnhancedMappingTable });
+        // Retry after a short delay if components are missing
+        setTimeout(initializeReactComponents, 100);
+        return;
+    }
+
+    // Render EnhancedMappingTable
+    if (tableContainer) {
+        console.log("Rendering EnhancedMappingTable, initial currentMapping:", currentMapping);
+        ReactDOM.render(
+            React.createElement(window.EnhancedMappingTable),
+            tableContainer
+        );
+    }
+}
+
+// Initialize event listeners
+function initializeEventListeners() {
+    console.log("Initializing event listeners");
+
+    const addRowBtn = document.getElementById('addRowBtn');
+    if (addRowBtn) {
+        addRowBtn.removeEventListener('click', handleAddRow);
+        addRowBtn.addEventListener('click', handleAddRow);
+        console.log("Add row button listener attached");
+    }
+
+    const saveChangesBtn = document.getElementById('saveChangesBtn');
+    if (saveChangesBtn) {
+        saveChangesBtn.removeEventListener('click', handleSaveChanges);
+        saveChangesBtn.addEventListener('click', handleSaveChanges);
+        console.log("Save changes button listener attached");
+    }
+}
+
+// Document ready handler
 document.addEventListener('DOMContentLoaded', function() {
-    let currentMapping = null;
-    let originalXmlStructure = null;
+    console.log("DOM Content Loaded");
 
-    // Constants for mapping types
-    const MAPPING_TYPES = [
-        'AGGREGATED',
-        'DEFAULTED',
-        'DERIVED',
-        'ENRICHED',
-        'FORMATTED',
-        'MAPPED',
-        'PASSED_THROUGH',
-        'NONE'
-    ];
+    // Remove the FilterBar section as we're moving filtering to the table header
+    const filterSection = document.getElementById('filterSection');
+    if (filterSection) {
+        filterSection.style.display = 'none';
+    }
 
-    // Initialize dropzone
     const dropzone = new Dropzone("#xmlDropzone", {
         url: "/upload_mapping",
         autoProcessQueue: false,
@@ -27,180 +115,408 @@ document.addEventListener('DOMContentLoaded', function() {
         createImageThumbnails: false
     });
 
-    // Initialize dialog root
-    const dialogRoot = document.getElementById('mappingTableDialogRoot');
-
-    // Handle file addition
     dropzone.on("addedfile", function(file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            try {
-                parseAndDisplayMapping(e.target.result);
-            } catch (error) {
-                console.error('Error parsing XML:', error);
-                alert('Error parsing XML file: ' + error.message);
-            }
+            parseAndDisplayMapping(e.target.result);
         };
         reader.readAsText(file);
     });
 
-    // Parse XML and display in editor
-    function parseAndDisplayMapping(xmlString) {
-        originalXmlStructure = xmlString;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-        currentMapping = extractMappingData(xmlDoc);
-        document.getElementById('editorSection').classList.remove('d-none');
-        populateTable(currentMapping);
+    initializeEventListeners();
+    initializeReactComponents();
+});
+
+// Handle adding new row
+function handleAddRow() {
+    console.log("Adding new row, currentMapping before:", currentMapping);
+    if (!currentMapping) {
+        currentMapping = [];
     }
 
-    // Extract mapping data from XML
-function extractMappingData(xmlDoc) {
-    const mappings = [];
-    const fieldNodes = xmlDoc.getElementsByTagName('field');
+    // Create a new mapping with a unique fieldName to avoid sorting conflicts
+    // Use timestamp to both identify new rows and for sorting
+    const newMapping = {
+        fieldName: `NewField_${Date.now()}`, // Unique identifier using timestamp
+        mappingType: 'NONE',
+        source: '',
+        notes: '',
+        tickets: '',
+        status: 'GOOD',
+        mappedValues: { src: '', mappings: [] }
+    };
 
-    // Use a single loop instead of nested Array.from and for loop
-    for (let i = 0; i < fieldNodes.length; i++) {
-        const fieldNode = fieldNodes[i];
-        const mapping = {
-            fieldName: '',
-            mappingType: 'NONE',
-            notes: '',
-            tickets: '',
-            status: 'GOOD'
-        };
+    // Push the new mapping to the array
+    currentMapping.push(newMapping);
+    console.log("Current mapping after add:", currentMapping);
 
-            // Extract field name (dest)
-            const destNode = fieldNode.getElementsByTagName('dest')[0];
-            if (destNode) {
-                mapping.fieldName = destNode.textContent;
-            }
-
-            // Extract mapping type
-            const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
-            if (mappingTypeNode) {
-                mapping.mappingType = mappingTypeNode.textContent;
-            }
-
-            // Extract notes
-            const notesNode = fieldNode.getElementsByTagName('notes')[0];
-            if (notesNode) {
-                mapping.notes = notesNode.textContent;
-            }
-
-            // Extract tickets
-            const jiraNodes = fieldNode.getElementsByTagName('jira');
-            mapping.tickets = Array.from(jiraNodes)
-                .map(node => node.textContent)
-                .join('\n');
-
-            // Extract status
-            const statusNode = fieldNode.getElementsByTagName('status')[0];
-            if (statusNode) {
-                mapping.status = statusNode.textContent;
-            }
-
-            // Handle specific mapping types
-            switch (mapping.mappingType) {
-                case 'PASSED_THROUGH':
-                    const srcNode = fieldNode.getElementsByTagName('src')[0];
-                    mapping.source = srcNode ? srcNode.textContent : '';
-                    break;
-
-                case 'DERIVED':
-                    mapping.derivedMapping = extractDerivedMapping(fieldNode);
-                    break;
-
-                case 'MAPPED':
-                    mapping.mappedValues = extractMappedValues(fieldNode);
-                    break;
-            }
-
-           mappings.push(mapping);
-    }
-
-        // Sort mappings alphabetically by fieldName
-return mappings.sort((a, b) => {
-        const nameA = a.fieldName.toLowerCase();
-        const nameB = b.fieldName.toLowerCase();
-        return nameA.localeCompare(nameB);
-    });
+    // Ensure the table updates with the new data
+    updateReactComponents();
+    window.scrollTo(0, 0);
 }
 
-    // Extract DERIVED mapping data
-    function extractDerivedMapping(fieldNode) {
-        const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
-        if (!ifElseNode) {
-            // Check for direct if nodes without ifelse wrapper
-            const ifNode = fieldNode.getElementsByTagName('if')[0];
-            if (!ifNode) return null;
-            return extractConditionsFromNode(ifNode);
-        }
 
-        const mapping = {
-            conditions: [],
-            value: ''
-        };
+// Handle mapping deletion
+function handleMappingDelete(index) {
+    console.log("Deleting row at index:", index);
+    if (!currentMapping) return;
 
-        // Extract all if/else-if nodes
-        const ifNodes = [...fieldNode.getElementsByTagName('if'), ...fieldNode.getElementsByTagName('else-if')];
+    if (confirm('Are you sure you want to delete this mapping?')) {
+        currentMapping.splice(index, 1);
+        console.log("Current mapping after delete:", currentMapping);
+        updateReactComponents();
+    }
+}
 
-        for (const ifNode of ifNodes) {
-            const conditions = extractConditionsFromNode(ifNode);
-            if (conditions) {
-                mapping.conditions = conditions.conditions;
-                if (!mapping.value && conditions.value) {
-                    mapping.value = conditions.value;
-                }
+// Handle mapping updates
+function handleMappingUpdate(index, field, value) {
+    console.log("Updating mapping:", index, field, value);
+    if (!currentMapping || index >= currentMapping.length) return;
+
+    const mapping = currentMapping[index];
+    mapping[field] = value;
+
+    if (field === 'mappingType') {
+        resetMappingTypeData(mapping, value);
+    }
+
+    updateReactComponents();
+}
+
+// Reset mapping type specific data
+function resetMappingTypeData(mapping, newType) {
+    mapping.source = '';
+    mapping.derivedMapping = null;
+    mapping.mappedValues = null;
+
+    switch (newType) {
+        case 'DERIVED':
+            mapping.derivedMapping = { conditions: [], value: '' };
+            break;
+        case 'MAPPED':
+            mapping.mappedValues = { src: '', mappings: [] };
+            break;
+    }
+}
+
+// Make these functions available globally
+window.handleAddRow = handleAddRow;
+window.handleMappingDelete = handleMappingDelete;
+window.handleMappingUpdate = handleMappingUpdate;
+window.getCurrentMapping = () => currentMapping || [];
+
+// Extract derived mapping data
+function extractDerivedMapping(fieldNode) {
+    console.log("Extracting derived mapping");
+
+    // Determine if this is a source-tag format or value-tag format
+    const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
+    let isSourceFormat = false;
+
+    if (ifElseNode) {
+        // Check if we have <src> tags instead of <value> tags in if nodes
+        const ifNodes = ifElseNode.getElementsByTagName('if');
+        for (let i = 0; i < ifNodes.length; i++) {
+            const ifNode = ifNodes[i];
+            if (ifNode.getElementsByTagName('src').length > 0) {
+                isSourceFormat = true;
+                break;
             }
+        }
+    }
+
+    const mapping = {
+        conditions: [],
+        value: '',
+        conditionSets: [], // New structure for enhanced support
+        outputFormat: isSourceFormat ? 'SOURCE' : 'VALUE'
+    };
+
+    // Check for ifelse structure (format 1)
+    if (ifElseNode) {
+        const ifNodes = Array.from(ifElseNode.getElementsByTagName('if'));
+        const elseIfNodes = Array.from(ifElseNode.getElementsByTagName('else-if'));
+        const elseNodes = Array.from(ifElseNode.getElementsByTagName('else'));
+
+        // Extract the conditions from each "if" node
+        ifNodes.forEach(ifNode => {
+            const andNode = ifNode.getElementsByTagName('and')[0];
+            if (andNode) {
+                const conditions = [];
+                const condNodes = andNode.getElementsByTagName('cond');
+                Array.from(condNodes).forEach(condNode => {
+                    conditions.push({
+                        src: condNode.getElementsByTagName('src')[0]?.textContent || '',
+                        oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
+                        value: condNode.getElementsByTagName('value')[0]?.textContent || ''
+                    });
+                });
+
+                // Get the value for this condition set
+                // Check if using src or value tag for the result
+                let resultValue = '';
+                if (isSourceFormat) {
+                    const srcNode = ifNode.getElementsByTagName('src')[0];
+                    resultValue = srcNode ? srcNode.textContent : '';
+                } else {
+                    const valueNode = ifNode.getElementsByTagName('value')[0];
+                    resultValue = valueNode ? valueNode.textContent : '';
+                }
+
+                // Add to conditions array (for backward compatibility)
+                mapping.conditions = [...mapping.conditions, ...conditions];
+
+                // Add to condition sets (new format)
+                mapping.conditionSets.push({
+                    conditions: conditions,
+                    value: resultValue
+                });
+            }
+        });
+
+        // Process else-if nodes
+        elseIfNodes.forEach(elseIfNode => {
+            const andNode = elseIfNode.getElementsByTagName('and')[0];
+            if (andNode) {
+                const conditions = [];
+                const condNodes = andNode.getElementsByTagName('cond');
+                Array.from(condNodes).forEach(condNode => {
+                    conditions.push({
+                        src: condNode.getElementsByTagName('src')[0]?.textContent || '',
+                        oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
+                        value: condNode.getElementsByTagName('value')[0]?.textContent || ''
+                    });
+                });
+
+                // Get the value for this condition set
+                let resultValue = '';
+                if (isSourceFormat) {
+                    const srcNode = elseIfNode.getElementsByTagName('src')[0];
+                    resultValue = srcNode ? srcNode.textContent : '';
+                } else {
+                    const valueNode = elseIfNode.getElementsByTagName('value')[0];
+                    resultValue = valueNode ? valueNode.textContent : '';
+                }
+
+                mapping.conditionSets.push({
+                    conditions: conditions,
+                    value: resultValue
+                });
+            }
+        });
+
+        // Process else node
+        if (elseNodes.length > 0) {
+            const elseNode = elseNodes[0];
+            let defaultValue = '';
+
+            if (isSourceFormat) {
+                const srcNode = elseNode.getElementsByTagName('src')[0];
+                defaultValue = srcNode ? srcNode.textContent : '';
+            } else {
+                const valueNode = elseNode.getElementsByTagName('value')[0];
+                defaultValue = valueNode ? valueNode.textContent : '';
+            }
+
+            mapping.conditionSets.push({
+                conditions: [], // Empty conditions = else
+                value: defaultValue
+            });
+
+            // Set the main default value
+            mapping.value = defaultValue;
+        } else {
+            // Check for a default value at the ifelse level
+            let defaultValue = '';
+
+            if (isSourceFormat) {
+                const srcNode = ifElseNode.getElementsByTagName('src')[0];
+                defaultValue = srcNode ? srcNode.textContent : '';
+            } else {
+                const valueNode = ifElseNode.getElementsByTagName('value')[0];
+                defaultValue = valueNode ? valueNode.textContent : '';
+            }
+
+            // Set the main default value
+            mapping.value = defaultValue;
         }
 
         return mapping;
     }
 
-    // Helper function to extract conditions from if/else-if nodes
-    function extractConditionsFromNode(node) {
-        const result = {
-            conditions: [],
-            value: ''
-        };
+    // Check for ctable structure (format 2)
+    const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
+    if (ctableNode) {
+        // For ctable format, always use VALUE format
+        mapping.outputFormat = 'VALUE';
 
-        const andNode = node.getElementsByTagName('and')[0];
-        if (andNode) {
-            const condNodes = andNode.getElementsByTagName('cond');
-            for (const condNode of condNodes) {
-                result.conditions.push({
-                    src: condNode.getElementsByTagName('src')[0]?.textContent || '',
-                    oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                    value: condNode.getElementsByTagName('value')[0]?.textContent || ''
+        // Extract source columns
+        const colsNode = ctableNode.getElementsByTagName('cols')[0];
+        let sourceFields = [];
+
+        if (colsNode) {
+            const srcNodes = colsNode.getElementsByTagName('src');
+            sourceFields = Array.from(srcNodes).map(node => node.textContent);
+        }
+
+        // Extract rows
+        const rowNodes = ctableNode.getElementsByTagName('row');
+        Array.from(rowNodes).forEach(rowNode => {
+            const valueNodes = rowNode.getElementsByTagName('value');
+            if (valueNodes.length >= 2) {
+                const conditions = [];
+
+                // Use the first value as condition value and the last as result
+                const conditionValue = valueNodes[0].textContent;
+                const resultValue = valueNodes[valueNodes.length - 1].textContent;
+
+                // Create a condition for each source field
+                if (sourceFields.length > 0) {
+                    conditions.push({
+                        src: sourceFields[0],
+                        oper: 'EQUALS',
+                        value: conditionValue
+                    });
+                }
+
+                // Add to condition sets
+                mapping.conditionSets.push({
+                    conditions: conditions,
+                    value: resultValue
                 });
+
+                // Add to main conditions array for backward compatibility
+                mapping.conditions = [...mapping.conditions, ...conditions];
             }
-        } else {
-            // Handle single condition without 'and' wrapper
-            const orNode = node.getElementsByTagName('or')[0];
-            if (orNode) {
-                const condNodes = orNode.getElementsByTagName('cond');
-                for (const condNode of condNodes) {
-                    result.conditions.push({
+        });
+
+        // If there are condition sets, use the first one for backward compatibility
+        if (mapping.conditionSets.length > 0) {
+            mapping.value = mapping.conditionSets[0].value;
+        }
+
+        return mapping;
+    }
+
+    // Check for the if/else structure with direct <if> and <else> tags
+    const ifNodes = fieldNode.getElementsByTagName('if');
+    const elseNodes = fieldNode.getElementsByTagName('else');
+
+    if (ifNodes.length > 0 || elseNodes.length > 0) {
+        // Determine format for this structure
+        for (let i = 0; i < ifNodes.length; i++) {
+            if (ifNodes[i].getElementsByTagName('src').length > 0) {
+                mapping.outputFormat = 'SOURCE';
+                break;
+            }
+        }
+
+        // Process if node
+        for (let i = 0; i < ifNodes.length; i++) {
+            const ifNode = ifNodes[i];
+            const refNode = ifNode.getElementsByTagName('ref')[0];
+
+            let srcNode, valueNode;
+            if (mapping.outputFormat === 'SOURCE') {
+                srcNode = ifNode.getElementsByTagName('src')[0];
+            } else {
+                valueNode = ifNode.getElementsByTagName('value')[0];
+            }
+
+            const andNode = ifNode.getElementsByTagName('and')[0];
+            if (andNode) {
+                const conditions = [];
+                const condNodes = andNode.getElementsByTagName('cond');
+                Array.from(condNodes).forEach(condNode => {
+                    conditions.push({
                         src: condNode.getElementsByTagName('src')[0]?.textContent || '',
                         oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
                         value: condNode.getElementsByTagName('value')[0]?.textContent || ''
                     });
+                });
+
+                // Get result value based on format
+                let resultValue = '';
+                if (mapping.outputFormat === 'SOURCE') {
+                    resultValue = srcNode ? srcNode.textContent : '';
+                } else {
+                    resultValue = valueNode ? valueNode.textContent : '';
                 }
+
+                mapping.conditionSets.push({
+                    conditions: conditions,
+                    value: resultValue
+                });
+
+                // Add to main conditions for backward compatibility
+                mapping.conditions = [...mapping.conditions, ...conditions];
+            } else if (refNode) {
+                // This is a ref-based condition
+                let srcContent = '';
+                if (mapping.outputFormat === 'SOURCE') {
+                    srcContent = srcNode ? srcNode.textContent : '';
+                }
+
+                const conditions = [{
+                    src: srcContent || '',
+                    oper: 'EQUALS',
+                    value: refNode.textContent || ''
+                }];
+
+                mapping.conditionSets.push({
+                    conditions: conditions,
+                    value: srcContent || (valueNode ? valueNode.textContent : '')
+                });
+
+                // Add to main conditions
+                mapping.conditions.push({
+                    src: srcContent || '',
+                    oper: 'EQUALS',
+                    value: refNode.textContent || ''
+                });
             }
         }
 
-        // Extract value
-        const valueNode = node.getElementsByTagName('value')[0];
-        if (valueNode) {
-            result.value = valueNode.textContent;
+        // Process else node
+        for (let i = 0; i < elseNodes.length; i++) {
+            const elseNode = elseNodes[i];
+            let resultValue = '';
+
+            if (mapping.outputFormat === 'SOURCE') {
+                const srcNode = elseNode.getElementsByTagName('src')[0];
+                resultValue = srcNode ? srcNode.textContent : '';
+            } else {
+                const valueNode = elseNode.getElementsByTagName('value')[0];
+                resultValue = valueNode ? valueNode.textContent : '';
+            }
+
+            mapping.conditionSets.push({
+                conditions: [], // Empty conditions = else
+                value: resultValue
+            });
+
+            // Use this as default value
+            mapping.value = resultValue;
         }
 
-        return result;
+        return mapping;
     }
 
-    // Extract MAPPED mapping data
-    function extractMappedValues(fieldNode) {
+    // If we can't identify a format, return a default structure
+    return {
+        conditions: [],
+        value: '',
+        conditionSets: [{
+            conditions: [],
+            value: ''
+        }],
+        outputFormat: 'VALUE'
+    };
+}
+
+// Extract MAPPED mapping data
+function extractMappedValues(fieldNode) {
+    console.log("Extracting mapped values");
     const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
     if (!ctableNode) return null;
 
@@ -209,7 +525,6 @@ return mappings.sort((a, b) => {
         mappings: []
     };
 
-    // Get source from cols
     const colsNode = ctableNode.getElementsByTagName('cols')[0];
     if (colsNode) {
         const srcNode = colsNode.getElementsByTagName('src')[0];
@@ -218,7 +533,6 @@ return mappings.sort((a, b) => {
         }
     }
 
-    // Get mappings from rows
     const rowNodes = ctableNode.getElementsByTagName('row');
     result.mappings = Array.from(rowNodes)
         .map(row => {
@@ -235,512 +549,367 @@ return mappings.sort((a, b) => {
 
     return result;
 }
-    // Populate table with mapping data
-// Populate table with mapping data
-    function populateTable(mappings) {
-        const tbody = document.getElementById('mappingTableBody');
-        tbody.innerHTML = '';
+// Parse and display mapping
+function parseAndDisplayMapping(xmlString) {
+    try {
+        console.log("Parsing XML string:", xmlString);
+        originalXmlStructure = xmlString;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
 
-        mappings.forEach((mapping, index) => {
-            const row = createTableRow(mapping, index);
-            tbody.appendChild(row);
-        });
+        if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+            throw new Error('XML parsing failed');
+        }
+
+        currentMapping = extractMappingData(xmlDoc);
+        console.log("Current mapping set:", currentMapping);
+        console.log("getCurrentMapping result:", window.getCurrentMapping());
+
+        const editorSection = document.getElementById('editorSection');
+        if (editorSection) {
+            editorSection.classList.remove('d-none');
+            console.log("Editor section displayed");
+        } else {
+            console.error("Editor section not found");
+        }
+
+        updateReactComponents();
+    } catch (error) {
+        console.error('Error parsing XML:', error);
+        alert('Error parsing XML file: ' + error.message);
     }
-
-    // Create table row for mapping
-    function createTableRow(mapping, index) {
-        const row = document.createElement('tr');
-
-        // Number cell
-        const numberCell = document.createElement('td');
-        numberCell.className = 'text-center';
-        numberCell.textContent = index + 1;
-        row.appendChild(numberCell);
-
-        // Field Name cell
-        const fieldNameCell = document.createElement('td');
-        const fieldNameInput = document.createElement('input');
-        fieldNameInput.type = 'text';
-        fieldNameInput.className = 'form-control font-monospace';
-        fieldNameInput.value = mapping.fieldName;
-        fieldNameInput.dataset.field = 'fieldName';
-        fieldNameInput.dataset.index = index;
-        fieldNameInput.addEventListener('change', (e) => updateMappingField(index, 'fieldName', e.target.value));
-        fieldNameCell.appendChild(fieldNameInput);
-        row.appendChild(fieldNameCell);
-
-        // Source cell
-        const sourceCell = createSourceCell(mapping, index);
-        row.appendChild(sourceCell);
-
-        // Mapping Type cell
-        const mappingTypeCell = document.createElement('td');
-        const mappingTypeSelect = document.createElement('select');
-        mappingTypeSelect.className = 'form-select';
-        mappingTypeSelect.dataset.field = 'mappingType';
-        mappingTypeSelect.dataset.index = index;
-
-        MAPPING_TYPES.forEach(type => {
-            const option = document.createElement('option');
-            option.value = type;
-            option.textContent = type;
-            if (mapping.mappingType === type) {
-                option.selected = true;
-            }
-            mappingTypeSelect.appendChild(option);
-        });
-
-        mappingTypeSelect.addEventListener('change', handleMappingTypeChange);
-        mappingTypeCell.appendChild(mappingTypeSelect);
-        row.appendChild(mappingTypeCell);
-
-        // Notes cell
-        const notesCell = document.createElement('td');
-        const notesTextarea = document.createElement('textarea');
-        notesTextarea.className = 'form-control';
-        notesTextarea.value = mapping.notes;
-        notesTextarea.dataset.field = 'notes';
-        notesTextarea.dataset.index = index;
-        notesTextarea.rows = 2;
-        notesTextarea.addEventListener('change', (e) => updateMappingField(index, 'notes', e.target.value));
-        notesCell.appendChild(notesTextarea);
-        row.appendChild(notesCell);
-
-        // Tickets cell
-        const ticketsCell = createTicketsCell(mapping, index);
-        row.appendChild(ticketsCell);
-
-        // Status cell
-        const statusCell = document.createElement('td');
-        const statusSelect = document.createElement('select');
-        statusSelect.className = 'form-select';
-        statusSelect.dataset.field = 'status';
-        statusSelect.dataset.index = index;
-
-        ['GOOD', 'BAD', 'PENDING'].forEach(status => {
-            const option = document.createElement('option');
-            option.value = status;
-            option.textContent = status;
-            if (mapping.status === status) {
-                option.selected = true;
-            }
-            statusSelect.appendChild(option);
-        });
-
-        statusSelect.addEventListener('change', (e) => updateMappingField(index, 'status', e.target.value));
-        statusCell.appendChild(statusSelect);
-        row.appendChild(statusCell);
-
-        // Actions cell
-        const actionsCell = document.createElement('td');
-        actionsCell.className = 'text-center';
-
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'btn btn-danger btn-sm';
-        deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
-        deleteButton.title = 'Delete mapping';
-        deleteButton.onclick = () => deleteRow(index);
-
-        actionsCell.appendChild(deleteButton);
-        row.appendChild(actionsCell);
-
-        return row;
-    }
-
-    // Create source cell based on mapping type
-    function createSourceCell(mapping, index) {
-    const sourceCell = document.createElement('td');
-
-    switch (mapping.mappingType) {
-        case 'PASSED_THROUGH':
-            const sourceInput = document.createElement('input');
-            sourceInput.type = 'text';
-            sourceInput.className = 'form-control';
-            sourceInput.value = mapping.source || '';
-            sourceInput.dataset.field = 'source';
-            sourceInput.dataset.index = index;
-            sourceInput.addEventListener('change', (e) => updateMappingField(index, 'source', e.target.value));
-            sourceCell.appendChild(sourceInput);
-            break;
-
-        case 'DERIVED':
-            const derivedButton = document.createElement('button');
-            derivedButton.className = 'btn btn-outline-secondary btn-sm';
-            derivedButton.innerHTML = '<i class="fas fa-code"></i> Edit Logic';
-            derivedButton.onclick = () => showDerivedMappingDialog(mapping, index);
-
-            const derivedPreview = document.createElement('div');
-            derivedPreview.className = 'mt-2 text-muted small';
-            if (mapping.derivedMapping?.conditions?.length > 0) {
-                derivedPreview.textContent = `${mapping.derivedMapping.conditions.length} condition(s)`;
-            }
-
-            sourceCell.appendChild(derivedButton);
-            sourceCell.appendChild(derivedPreview);
-            break;
-
-        case 'MAPPED':
-            // Create container for grid and button
-            const container = document.createElement('div');
-            container.className = 'd-flex flex-column gap-2';
-
-            // Add mappings preview grid
-            if (mapping.mappedValues?.mappings?.length > 0) {
-                const table = document.createElement('table');
-                table.className = 'table table-sm table-bordered mb-2';
-                table.style.fontSize = '0.875rem';
-
-                // Create table header
-                const thead = document.createElement('thead');
-                const headerRow = document.createElement('tr');
-
-                // Get the source path from mappedValues
-                const sourcePath = mapping.mappedValues.src || '';
-
-                // Create headers using fieldName and source path
-                [
-                    {text: mapping.fieldName || 'Value', className: 'bg-light text-secondary'},
-                    {text: sourcePath || 'Maps To', className: 'bg-light text-secondary'}
-                ].forEach(header => {
-                    const th = document.createElement('th');
-                    th.className = header.className;
-                    th.style.padding = '0.25rem 0.5rem';
-                    th.textContent = header.text;
-                    headerRow.appendChild(th);
-                });
-                thead.appendChild(headerRow);
-                table.appendChild(thead);
-
-                // Create table body
-                const tbody = document.createElement('tbody');
-                mapping.mappedValues.mappings.forEach(mapValue => {
-                    const row = document.createElement('tr');
-
-                    // From value
-                    const fromCell = document.createElement('td');
-                    fromCell.style.padding = '0.25rem 0.5rem';
-                    fromCell.textContent = mapValue.from || '';
-                    row.appendChild(fromCell);
-
-                    // To value
-                    const toCell = document.createElement('td');
-                    toCell.style.padding = '0.25rem 0.5rem';
-                    toCell.textContent = mapValue.to || '';
-                    row.appendChild(toCell);
-
-                    tbody.appendChild(row);
-                });
-                table.appendChild(tbody);
-                container.appendChild(table);
-            }
-
-            // Add Edit button below the table
-            const mappedButton = document.createElement('button');
-            mappedButton.className = 'btn btn-outline-secondary btn-sm w-100';
-            mappedButton.innerHTML = '<i class="fas fa-table"></i> Edit Mappings';
-            mappedButton.onclick = () => showMappedDialog(mapping, index);
-            container.appendChild(mappedButton);
-
-            // Add preview text
-            //const mappedPreview = document.createElement('div');
-            //mappedPreview.className = 'text-muted small text-center';
-            //if (mapping.mappedValues?.mappings?.length > 0) {
-                //mappedPreview.textContent = `${mapping.mappedValues.mappings.length} mapping(s)`;
-            //}
-            //container.appendChild(mappedPreview);
-
-            sourceCell.appendChild(container);
-            break;
-
-        default:
-            sourceCell.textContent = 'N/A';
-            break;
-    }
-
-    return sourceCell;
 }
 
-    // Create tickets cell with tag functionality
-    function createTicketsCell(mapping, index) {
-        const ticketsCell = document.createElement('td');
-        const ticketsContainer = document.createElement('div');
-        ticketsContainer.className = 'd-flex flex-wrap gap-2 mb-2';
+// Extract mapping data from XML
+function extractMappingData(xmlDoc) {
+    console.log("Extracting mapping data from XML");
+    const mappings = [];
+    const fieldNodes = xmlDoc.getElementsByTagName('field');
+    console.log("Field nodes found:", fieldNodes.length);
 
-        const ticketsInput = document.createElement('input');
-        ticketsInput.type = 'text';
-        ticketsInput.className = 'form-control';
-        ticketsInput.placeholder = 'Add ticket...';
-        ticketsInput.dataset.field = 'tickets';
-        ticketsInput.dataset.index = index;
-
-        const tickets = mapping.tickets ? mapping.tickets.split('\n').filter(t => t.trim()) : [];
-        tickets.forEach(ticket => {
-            ticketsContainer.appendChild(createTicketTag(ticket, index));
-        });
-
-        ticketsInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (this.value.trim()) {
-                    const ticket = this.value.trim();
-                    ticketsContainer.appendChild(createTicketTag(ticket, index));
-                    updateTicketsValue(index);
-                    this.value = '';
-                }
-            }
-        });
-
-        ticketsCell.appendChild(ticketsContainer);
-        ticketsCell.appendChild(ticketsInput);
-        return ticketsCell;
-    }
-
-    // Create individual ticket tag
-    function createTicketTag(ticket, index) {
-        const tag = document.createElement('span');
-        tag.className = 'badge bg-secondary me-1 mb-1 p-2';
-        tag.textContent = ticket;
-
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'btn-close btn-close-white ms-2';
-        removeBtn.style.fontSize = '0.5em';
-        removeBtn.onclick = function(e) {
-            e.preventDefault();
-            tag.remove();
-            updateTicketsValue(index);
-        };
-
-        tag.appendChild(removeBtn);
-        return tag;
-    }
-
-    // Update mapping field value
-    function updateMappingField(index, field, value) {
-        currentMapping[index][field] = value;
-    }
-
-    // Delete row functionality
-    function deleteRow(index) {
-        if (confirm('Are you sure you want to delete this mapping?')) {
-            currentMapping.splice(index, 1);
-            populateTable(currentMapping);
-        }
-    }
-    // Show DERIVED mapping dialog
-    function showDerivedMappingDialog(mapping, index) {
-        const derivedData = mapping.derivedMapping || {
-            conditions: [],
-            value: ''
-        };
-
-        // For complex derived mappings with OR conditions
-        if (mapping.ifelse) {
-            const conditions = [];
-            const ifNodes = mapping.ifelse.getElementsByTagName('if');
-            for (const ifNode of ifNodes) {
-                const andNode = ifNode.getElementsByTagName('and')[0];
-                if (andNode) {
-                    const condNodes = andNode.getElementsByTagName('cond');
-                    for (const condNode of condNodes) {
-                        conditions.push({
-                            src: condNode.getElementsByTagName('src')[0]?.textContent || '',
-                            oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                            value: condNode.getElementsByTagName('value')[0]?.textContent || ''
-                        });
-                    }
-                }
-            }
-            derivedData.conditions = conditions;
-            derivedData.value = mapping.ifelse.getElementsByTagName('value')[0]?.textContent || '';
-        }
-
-        ReactDOM.render(
-            React.createElement(window.MappingTableDialog, {
-                isOpen: true,
-                onClose: () => {
-                    ReactDOM.render(null, dialogRoot);
-                },
-                mappingType: 'DERIVED',
-                initialData: derivedData,
-                onSave: (newMapping) => {
-                    currentMapping[index].derivedMapping = newMapping;
-                    populateTable(currentMapping);
-                    ReactDOM.render(null, dialogRoot);
-                }
-            }),
-            dialogRoot
-        );
-    }
-
-    // Show MAPPED dialog
-    function showMappedDialog(mapping, index) {
-        const mappedData = {
-            src: mapping.mappedValues?.src || '',
-            mappings: mapping.mappedValues?.mappings || []
-        };
-
-        ReactDOM.render(
-            React.createElement(window.MappingTableDialog, {
-                isOpen: true,
-                onClose: () => {
-                    ReactDOM.render(null, dialogRoot);
-                },
-                mappingType: 'MAPPED',
-                initialData: mappedData,
-                onSave: (newMapping) => {
-                    currentMapping[index].mappedValues = newMapping;
-                    populateTable(currentMapping);
-                    ReactDOM.render(null, dialogRoot);
-                }
-            }),
-            dialogRoot
-        );
-    }
-
-    // Update tickets value in mapping data
-    function updateTicketsValue(index) {
-        const cell = document.querySelector(`tr:nth-child(${index + 1}) td:nth-last-child(3)`);
-        const tags = Array.from(cell.querySelectorAll('.badge')).map(tag => {
-            const textContent = tag.textContent;
-            return textContent.substring(0, textContent.length - 1).trim(); // Remove the × from the end
-        });
-        currentMapping[index].tickets = tags.join('\n');
-    }
-
-    // Add new row functionality
-    document.getElementById('addRowBtn').addEventListener('click', function() {
-        const newMapping = {
+    for (let i = 0; i < fieldNodes.length; i++) {
+        const fieldNode = fieldNodes[i];
+        const mapping = {
             fieldName: '',
             mappingType: 'NONE',
             notes: '',
             tickets: '',
             status: 'GOOD'
         };
-        currentMapping.push(newMapping);
-        // Re-sort the array after adding new mapping
-        currentMapping.sort((a, b) => {
-            const nameA = a.fieldName.toLowerCase();
-            const nameB = b.fieldName.toLowerCase();
-            return nameA.localeCompare(nameB);
-        });
-        populateTable(currentMapping);
-        window.scrollTo(0, 0);
-    });
 
-    // Generate XML when saving
-document.getElementById('saveChangesBtn').addEventListener('click', function() {
-    if (!currentMapping) {
-        alert('No mapping data to save');
-        return;
+        const destNode = fieldNode.getElementsByTagName('dest')[0];
+        if (destNode) {
+            mapping.fieldName = destNode.textContent;
+        }
+
+        const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
+        if (mappingTypeNode) {
+            mapping.mappingType = mappingTypeNode.textContent;
+        }
+
+        const notesNode = fieldNode.getElementsByTagName('notes')[0];
+        if (notesNode) {
+            mapping.notes = notesNode.textContent;
+        }
+
+        // Updated ticket parsing to handle <tickets> wrapper tag
+        // First try the new format with <tickets> wrapper
+        const ticketsNode = fieldNode.getElementsByTagName('tickets')[0];
+        if (ticketsNode) {
+            const jiraNodes = ticketsNode.getElementsByTagName('jira');
+            mapping.tickets = Array.from(jiraNodes)
+                .map(node => node.textContent)
+                .join('\n');
+        } else {
+            // Fallback to the old format for backward compatibility
+            const jiraNodes = fieldNode.getElementsByTagName('jira');
+            mapping.tickets = Array.from(jiraNodes)
+                .map(node => node.textContent)
+                .join('\n');
+        }
+
+        const statusNode = fieldNode.getElementsByTagName('status')[0];
+        if (statusNode) {
+            mapping.status = statusNode.textContent;
+        }
+
+        switch (mapping.mappingType) {
+            case 'PASSED_THROUGH':
+                const srcNode = fieldNode.getElementsByTagName('src')[0];
+                mapping.source = srcNode ? srcNode.textContent : '';
+                break;
+            case 'DERIVED':
+                mapping.derivedMapping = extractDerivedMapping(fieldNode);
+                break;
+            case 'MAPPED':
+                mapping.mappedValues = extractMappedValues(fieldNode);
+                break;
+        }
+
+        mappings.push(mapping);
+        console.log(`Extracted mapping ${i + 1}:`, mapping);
     }
-    console.log('Current Mapping:', currentMapping);
+
+    return mappings.sort((a, b) => a.fieldName.toLowerCase().localeCompare(b.fieldName.toLowerCase()));
+}
+// Generate XML for saving
+function generateXml() {
+    console.log("Generating XML");
+    if (!currentMapping) return null;
+
     let xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
-
     currentMapping.forEach(mapping => {
-    xmlContent += '  <field>\n';
-    xmlContent += `    <dest>${escapeXml(mapping.fieldName || '')}</dest>\n`;
-    xmlContent += `    <mapping-type>${escapeXml(mapping.mappingType || 'NONE')}</mapping-type>\n`;
+        xmlContent += generateMappingXml(mapping);
+    });
+    xmlContent += '</mappings>';
+    return xmlContent;
+}
 
-    // Ensure at least a default structure for each mapping type
+// Generate XML for a single mapping
+function generateMappingXml(mapping) {
+    let xml = '  <field>\n';
+    xml += `    <dest>${escapeXml(mapping.fieldName)}</dest>\n`;
+    xml += `    <mapping-type>${escapeXml(mapping.mappingType)}</mapping-type>\n`;
+
     switch (mapping.mappingType) {
         case 'PASSED_THROUGH':
-            xmlContent += mapping.source ? `    <src>${escapeXml(mapping.source)}</src>\n` : '';
+            if (mapping.source) {
+                xml += `    <src>${escapeXml(mapping.source)}</src>\n`;
+            }
             break;
-
         case 'DERIVED':
-            if (mapping.derivedMapping && mapping.derivedMapping.conditions.length > 0) {
-                xmlContent += '    <ifelse>\n';
-                xmlContent += '      <if>\n';
-                xmlContent += '        <and>\n';
-                mapping.derivedMapping.conditions.forEach(condition => {
-                    xmlContent += '          <cond>\n';
-                    xmlContent += `            <src>${escapeXml(condition.src || '')}</src>\n`;
-                    xmlContent += `            <oper>${escapeXml(condition.oper || 'EQUALS')}</oper>\n`;
-                    xmlContent += `            <value>${escapeXml(condition.value || '')}</value>\n`;
-                    xmlContent += '          </cond>\n';
-                });
-                xmlContent += '        </and>\n';
-                xmlContent += `        <value>${escapeXml(mapping.derivedMapping.value || '')}</value>\n`;
-                xmlContent += '      </if>\n';
-                xmlContent += '    </ifelse>\n';
-            } else {
-                xmlContent += '    <ifelse/>\n'; // Empty ifelse if no conditions
-            }
+            xml += generateDerivedXml(mapping.derivedMapping);
             break;
-
         case 'MAPPED':
-            if (mapping.mappedValues && mapping.mappedValues.mappings.length > 0) {
-                xmlContent += '    <ctable>\n';
-                xmlContent += '      <cols>\n';
-                xmlContent += `        <src>${escapeXml(mapping.mappedValues.src || '')}</src>\n`;
-                xmlContent += '      </cols>\n';
-                mapping.mappedValues.mappings.forEach(mapValue => {
-                    xmlContent += '      <row>\n';
-                    xmlContent += `        <value>${escapeXml(mapValue.from || '')}</value>\n`;
-                    xmlContent += `        <value>${escapeXml(mapValue.to || '')}</value>\n`;
-                    xmlContent += '      </row>\n';
-                });
-                xmlContent += '    </ctable>\n';
-            } else {
-                xmlContent += '    <ctable/>\n'; // Empty ctable if no mappings
-            }
+            xml += generateMappedXml(mapping.mappedValues);
             break;
     }
 
     if (mapping.notes) {
-        xmlContent += `    <notes>${escapeXml(mapping.notes)}</notes>\n`;
-    }
-    if (mapping.tickets) {
-        const tickets = mapping.tickets.split('\n').filter(t => t.trim());
-        tickets.forEach(ticket => {
-            xmlContent += `    <jira>${escapeXml(ticket)}</jira>\n`;
-        });
-    }
-    xmlContent += `    <status>${escapeXml(mapping.status || 'GOOD')}</status>\n`;
-    xmlContent += '  </field>\n';
-});
-
-    xmlContent += '</mappings>';
-
-    // Debug: Log the generated XML
-    console.log('Generated XML:', xmlContent);
-
-    // Validate XML
-    if (!validateXml(xmlContent)) {
-        alert('Generated XML is invalid. Please check the console for details.');
-        return;
+        xml += `    <notes>${escapeXml(mapping.notes)}</notes>\n`;
     }
 
-    // Create and trigger download
-       try {
-        const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'mapping.xml';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-    } catch (e) {
-        console.error('Error creating Blob:', e);
-        alert('Failed to save the XML file. Please check the console for details.');
-    }
-});
+    // First add status (changed order)
+    xml += `    <status>${escapeXml(mapping.status)}</status>\n`;
 
-// Validation function
-function validateXml(xmlString) {
-    try {
-        const parser = new DOMParser();
-        parser.parseFromString(xmlString, 'text/xml');
-        return true;
-    } catch (e) {
-        console.error('Invalid XML:', e.message);
-        return false;
+    // Then add tickets with <tickets> wrapper tags
+    if (mapping.tickets && mapping.tickets.trim()) {
+        const ticketLines = mapping.tickets.split('\n')
+            .filter(ticket => ticket.trim())
+            .map(ticket => `      <jira>${escapeXml(ticket.trim())}</jira>`)
+            .join('\n');
+
+        if (ticketLines) {
+            xml += '    <tickets>\n';
+            xml += ticketLines + '\n';
+            xml += '    </tickets>\n';
+        }
     }
+
+    xml += '  </field>\n';
+    return xml;
 }
 
-// Robust escapeXml function
+// Generate XML for derived mapping
+function generateDerivedXml(derivedMapping) {
+    if (!derivedMapping) return '';
+
+    let xml = '';
+
+    // Determine if we're using SOURCE format or VALUE format
+    const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
+
+    // If we have multiple condition sets, use the ifelse format
+    if (derivedMapping.conditionSets && derivedMapping.conditionSets.length > 0) {
+        // Check if we're using the if/else structure or ifelse structure
+        const hasIfElseIf = derivedMapping.conditionSets.some(set =>
+            set.conditions.length > 0 && set.conditions.some(cond => cond.src.includes('.')));
+
+        if (!hasIfElseIf) {
+            xml += '    <ifelse>\n';
+
+            // Generate if nodes for each condition set
+            derivedMapping.conditionSets.forEach(conditionSet => {
+                if (conditionSet.conditions.length > 0) {
+                    xml += '      <if>\n';
+                    xml += '        <and>\n';
+
+                    // Generate condition nodes
+                    conditionSet.conditions.forEach(condition => {
+                        xml += '          <cond>\n';
+                        xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                        xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+                        xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+                        xml += '          </cond>\n';
+                    });
+
+                    xml += '        </and>\n';
+
+                    // Add the result using either <src> or <value> tag based on the outputFormat
+                    if (isSourceFormat) {
+                        // When using source format, use <src> tag
+                        xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
+                    } else {
+                        // When using value format, use <value> tag
+                        xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
+                    }
+
+                    xml += '      </if>\n';
+                }
+            });
+
+            // Add a default value with the appropriate tag
+            const defaultValue = derivedMapping.conditionSets[0]?.value || derivedMapping.value || '';
+            if (isSourceFormat) {
+                xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
+            } else {
+                xml += `      <value>${escapeXml(defaultValue)}</value>\n`;
+            }
+
+            xml += '    </ifelse>\n';
+        } else {
+            // Handle complex if/else-if/else structure seen in Image 3
+            xml += '    <ifelse>\n';
+
+            // First handle all condition sets with conditions (if and else-if)
+            let isFirstIf = true;
+            derivedMapping.conditionSets.forEach(conditionSet => {
+                if (conditionSet.conditions.length > 0) {
+                    // First condition set uses <if>, others use <else-if>
+                    if (isFirstIf) {
+                        xml += '      <if>\n';
+                        isFirstIf = false;
+                    } else {
+                        xml += '      <else-if>\n';
+                    }
+
+                    // Check if there are ref tags to use
+                    const hasRef = conditionSet.conditions.some(cond => cond.src.includes('Ref'));
+
+                    if (hasRef) {
+                        const refValue = conditionSet.conditions[0]?.value || '';
+                        xml += `        <ref>${escapeXml(refValue)}</ref>\n`;
+
+                        // Add conditions if we have them
+                        if (conditionSet.conditions.length > 0) {
+                            xml += '        <and>\n';
+                            conditionSet.conditions.forEach(condition => {
+                                xml += '          <cond>\n';
+                                xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                                xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+
+                                // For complex conditions with source fields
+                                if (condition.src !== condition.value && condition.value) {
+                                    xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+                                } else if (condition.src === condition.value) {
+                                    xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                                }
+
+                                xml += '          </cond>\n';
+                            });
+                            xml += '        </and>\n';
+                        }
+                    } else {
+                        xml += '        <and>\n';
+                        conditionSet.conditions.forEach(condition => {
+                            xml += '          <cond>\n';
+                            xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                            xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+                            xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+                            xml += '          </cond>\n';
+                        });
+                        xml += '        </and>\n';
+                    }
+
+                    // Add the result with the appropriate tag
+                    if (isSourceFormat) {
+                        xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
+                    } else {
+                        xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
+                    }
+
+                    // Close the if or else-if tag
+                    if (isFirstIf) {
+                        xml += '      </if>\n';
+                    } else {
+                        xml += '      </else-if>\n';
+                    }
+                }
+            });
+
+            // Handle the default case (else)
+            const elseSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
+            if (elseSet) {
+                xml += '      <else>\n';
+                if (isSourceFormat) {
+                    xml += `        <src>${escapeXml(elseSet.value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(elseSet.value)}</value>\n`;
+                }
+                xml += '      </else>\n';
+            }
+
+            xml += '    </ifelse>\n';
+        }
+    }
+    // Fallback to the old format
+    else if (derivedMapping.conditions && derivedMapping.conditions.length > 0) {
+        xml += '    <ifelse>\n';
+        xml += '      <if>\n';
+        xml += '        <and>\n';
+
+        // Generate condition nodes
+        derivedMapping.conditions.forEach(condition => {
+            xml += '          <cond>\n';
+            xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+            xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+            xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+            xml += '          </cond>\n';
+        });
+
+        xml += '        </and>\n';
+
+        // Use appropriate tag based on output format
+        if (isSourceFormat) {
+            xml += `        <src>${escapeXml(derivedMapping.value)}</src>\n`;
+        } else {
+            xml += `        <value>${escapeXml(derivedMapping.value)}</value>\n`;
+        }
+
+        xml += '      </if>\n';
+
+        // Add default with appropriate tag
+        if (isSourceFormat) {
+            xml += `      <src>${escapeXml(derivedMapping.value)}</src>\n`;
+        } else {
+            xml += `      <value>${escapeXml(derivedMapping.value)}</value>\n`;
+        }
+
+        xml += '    </ifelse>\n';
+    }
+
+    return xml;
+}
+
+// Generate XML for mapped values
+function generateMappedXml(mappedValues) {
+    if (!mappedValues) return '';
+
+    let xml = '    <ctable>\n';
+    xml += '      <cols>\n';
+    xml += `        <src>${escapeXml(mappedValues.src)}</src>\n`;
+    xml += '      </cols>\n';
+    mappedValues.mappings.forEach(mapping => {
+        xml += '      <row>\n';
+        xml += `        <value>${escapeXml(mapping.from)}</value>\n`;
+        xml += `        <value>${escapeXml(mapping.to)}</value>\n`;
+        xml += '      </row>\n';
+    });
+    xml += '    </ctable>\n';
+    return xml;
+}
+
+// Escape XML special characters
 function escapeXml(unsafe) {
     if (!unsafe) return '';
     return unsafe
@@ -751,21 +920,154 @@ function escapeXml(unsafe) {
         .replace(/'/g, '&apos;');
 }
 
-    // Handle mapping type changes
-function handleMappingTypeChange(event) {
-        const index = parseInt(event.target.dataset.index);
-        const newType = event.target.value;
-        const mapping = currentMapping[index];
+// Show mapped dialog
+function showMappedDialog(mapping, index) {
+    console.log("Opening mapped dialog for index:", index);
+    const dialogRoot = document.getElementById('mappingTableDialogRoot');
+    if (!dialogRoot) {
+        console.error("Dialog root not found");
+        return;
+    }
 
-        // Reset source-related fields
-        mapping.source = '';
-        mapping.derivedMapping = null;
-        mapping.mappedValues = null;
+    const mappedData = {
+        src: mapping.mappedValues?.src || '',
+        mappings: mapping.mappedValues?.mappings || []
+    };
 
-        // Update mapping type
-        mapping.mappingType = newType;
+    ReactDOM.render(
+        React.createElement(window.MappingTableDialog, {
+            isOpen: true,
+            onClose: () => {
+                ReactDOM.unmountComponentAtNode(dialogRoot);
+            },
+            mappingType: 'MAPPED',
+            initialData: mappedData,
+            onSave: (newMapping) => {
+                console.log("Saving mapped values:", newMapping);
+                currentMapping[index].mappedValues = newMapping;
+                updateReactComponents();
+                ReactDOM.unmountComponentAtNode(dialogRoot);
+            }
+        }),
+        dialogRoot
+    );
+}
+// Show derived mapping dialog
+function showDerivedMappingDialog(mapping, index) {
+    console.log("Opening derived dialog for index:", index);
+    const dialogRoot = document.getElementById('mappingTableDialogRoot');
+    if (!dialogRoot) {
+        console.error("Dialog root not found");
+        return;
+    }
 
-        // Refresh the table
-        populateTable(currentMapping);
+    const derivedData = mapping.derivedMapping || {
+        conditions: [],
+        value: ''
+    };
+
+    ReactDOM.render(
+        React.createElement(window.MappingTableDialog, {
+            isOpen: true,
+            onClose: () => {
+                ReactDOM.unmountComponentAtNode(dialogRoot);
+            },
+            mappingType: 'DERIVED',
+            initialData: derivedData,
+            onSave: (newMapping) => {
+                console.log("Saving derived mapping:", newMapping);
+                currentMapping[index].derivedMapping = newMapping;
+                updateReactComponents();
+                ReactDOM.unmountComponentAtNode(dialogRoot);
+            }
+        }),
+        dialogRoot
+    );
+}
+
+// Handle saving changes
+function handleSaveChanges() {
+    console.log("Handling save changes");
+    if (!currentMapping) {
+        alert('No mapping data to save');
+        return;
+    }
+
+    try {
+        const xmlContent = generateXml();
+        if (!xmlContent) {
+            throw new Error('Failed to generate XML content');
+        }
+
+        downloadXmlFile(xmlContent);
+    } catch (error) {
+        console.error('Error saving XML:', error);
+        alert('Failed to save the XML file: ' + error.message);
+    }
+}
+
+// Download XML file
+function downloadXmlFile(xmlContent) {
+    console.log("Downloading XML file");
+    const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mapping.xml';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
+
+// Clean up any existing dialogs
+function cleanupDialogs() {
+    const dialogRoot = document.getElementById('mappingTableDialogRoot');
+    if (dialogRoot) {
+        ReactDOM.unmountComponentAtNode(dialogRoot);
+    }
+}
+
+// Handle window unload
+window.addEventListener('unload', () => {
+    cleanupDialogs();
+});
+
+// Export necessary functions to window object
+window.showMappedDialog = showMappedDialog;
+window.showDerivedMappingDialog = showDerivedMappingDialog;
+window.handleSaveChanges = handleSaveChanges;
+window.setForceUpdate = setForceUpdate;
+
+// Additional Utility Functions
+function validateMapping(mapping) {
+    console.log("Validating mapping:", mapping);
+    if (!mapping) return false;
+
+    const requiredFields = ['fieldName', 'mappingType', 'status'];
+    for (const field of requiredFields) {
+        if (!mapping[field]) {
+            console.warn(`Missing required field: ${field}`);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Debug helper function
+function logMappingState() {
+    console.log("Current Mapping State:", {
+        mappingCount: currentMapping ? currentMapping.length : 0,
+        hasForceUpdate: !!forceUpdate
+    });
+}
+
+// Handle browser refresh/navigation
+window.addEventListener('beforeunload', (event) => {
+    if (currentMapping && currentMapping.length > 0) {
+        const message = 'You have unsaved changes. Are you sure you want to leave?';
+        event.returnValue = message;
+        return message;
     }
 });
