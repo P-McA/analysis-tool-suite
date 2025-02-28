@@ -209,30 +209,14 @@ window.getCurrentMapping = () => currentMapping || [];
 function extractDerivedMapping(fieldNode) {
     console.log("Extracting derived mapping");
 
-    // Determine if this is a source-tag format or value-tag format
-    const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
-    let isSourceFormat = false;
-
-    if (ifElseNode) {
-        // Check if we have <src> tags instead of <value> tags in if nodes
-        const ifNodes = ifElseNode.getElementsByTagName('if');
-        for (let i = 0; i < ifNodes.length; i++) {
-            const ifNode = ifNodes[i];
-            if (ifNode.getElementsByTagName('src').length > 0) {
-                isSourceFormat = true;
-                break;
-            }
-        }
-    }
-
     const mapping = {
         conditions: [],
         value: '',
-        conditionSets: [], // New structure for enhanced support
-        outputFormat: isSourceFormat ? 'SOURCE' : 'VALUE'
+        conditionSets: [] // New structure for enhanced support
     };
 
     // Check for ifelse structure (format 1)
+    const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
     if (ifElseNode) {
         const ifNodes = Array.from(ifElseNode.getElementsByTagName('if'));
         const elseIfNodes = Array.from(ifElseNode.getElementsByTagName('else-if'));
@@ -252,15 +236,20 @@ function extractDerivedMapping(fieldNode) {
                     });
                 });
 
-                // Get the value for this condition set
-                // Check if using src or value tag for the result
+                // Determine the output format for this condition set
+                let outputFormat = 'VALUE'; // Default
                 let resultValue = '';
-                if (isSourceFormat) {
-                    const srcNode = ifNode.getElementsByTagName('src')[0];
-                    resultValue = srcNode ? srcNode.textContent : '';
-                } else {
-                    const valueNode = ifNode.getElementsByTagName('value')[0];
-                    resultValue = valueNode ? valueNode.textContent : '';
+
+                // Check if using src or value tag for the result
+                const srcNode = ifNode.getElementsByTagName('src')[0];
+                const valueNode = ifNode.getElementsByTagName('value')[0];
+
+                if (srcNode) {
+                    resultValue = srcNode.textContent;
+                    outputFormat = 'SOURCE';
+                } else if (valueNode) {
+                    resultValue = valueNode.textContent;
+                    outputFormat = 'VALUE';
                 }
 
                 // Add to conditions array (for backward compatibility)
@@ -269,7 +258,8 @@ function extractDerivedMapping(fieldNode) {
                 // Add to condition sets (new format)
                 mapping.conditionSets.push({
                     conditions: conditions,
-                    value: resultValue
+                    value: resultValue,
+                    outputFormat: outputFormat
                 });
             }
         });
@@ -288,19 +278,25 @@ function extractDerivedMapping(fieldNode) {
                     });
                 });
 
-                // Get the value for this condition set
+                // Determine output format for this condition
+                let outputFormat = 'VALUE'; // Default
                 let resultValue = '';
-                if (isSourceFormat) {
-                    const srcNode = elseIfNode.getElementsByTagName('src')[0];
-                    resultValue = srcNode ? srcNode.textContent : '';
-                } else {
-                    const valueNode = elseIfNode.getElementsByTagName('value')[0];
-                    resultValue = valueNode ? valueNode.textContent : '';
+
+                const srcNode = elseIfNode.getElementsByTagName('src')[0];
+                const valueNode = elseIfNode.getElementsByTagName('value')[0];
+
+                if (srcNode) {
+                    resultValue = srcNode.textContent;
+                    outputFormat = 'SOURCE';
+                } else if (valueNode) {
+                    resultValue = valueNode.textContent;
+                    outputFormat = 'VALUE';
                 }
 
                 mapping.conditionSets.push({
                     conditions: conditions,
-                    value: resultValue
+                    value: resultValue,
+                    outputFormat: outputFormat
                 });
             }
         });
@@ -308,19 +304,24 @@ function extractDerivedMapping(fieldNode) {
         // Process else node
         if (elseNodes.length > 0) {
             const elseNode = elseNodes[0];
+            let outputFormat = 'VALUE'; // Default
             let defaultValue = '';
 
-            if (isSourceFormat) {
-                const srcNode = elseNode.getElementsByTagName('src')[0];
-                defaultValue = srcNode ? srcNode.textContent : '';
-            } else {
-                const valueNode = elseNode.getElementsByTagName('value')[0];
-                defaultValue = valueNode ? valueNode.textContent : '';
+            const srcNode = elseNode.getElementsByTagName('src')[0];
+            const valueNode = elseNode.getElementsByTagName('value')[0];
+
+            if (srcNode) {
+                defaultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
+            } else if (valueNode) {
+                defaultValue = valueNode.textContent;
+                outputFormat = 'VALUE';
             }
 
             mapping.conditionSets.push({
                 conditions: [], // Empty conditions = else
-                value: defaultValue
+                value: defaultValue,
+                outputFormat: outputFormat
             });
 
             // Set the main default value
@@ -328,13 +329,26 @@ function extractDerivedMapping(fieldNode) {
         } else {
             // Check for a default value at the ifelse level
             let defaultValue = '';
+            let outputFormat = 'VALUE'; // Default
 
-            if (isSourceFormat) {
-                const srcNode = ifElseNode.getElementsByTagName('src')[0];
-                defaultValue = srcNode ? srcNode.textContent : '';
-            } else {
-                const valueNode = ifElseNode.getElementsByTagName('value')[0];
-                defaultValue = valueNode ? valueNode.textContent : '';
+            const srcNode = ifElseNode.getElementsByTagName('src')[0];
+            const valueNode = ifElseNode.getElementsByTagName('value')[0];
+
+            if (srcNode) {
+                defaultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
+            } else if (valueNode) {
+                defaultValue = valueNode.textContent;
+                outputFormat = 'VALUE';
+            }
+
+            // If we have condition sets but no else, add a default condition set
+            if (mapping.conditionSets.length > 0 && !mapping.conditionSets.some(set => set.conditions.length === 0)) {
+                mapping.conditionSets.push({
+                    conditions: [], // Empty conditions = default
+                    value: defaultValue,
+                    outputFormat: outputFormat
+                });
             }
 
             // Set the main default value
@@ -348,7 +362,7 @@ function extractDerivedMapping(fieldNode) {
     const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
     if (ctableNode) {
         // For ctable format, always use VALUE format
-        mapping.outputFormat = 'VALUE';
+        const outputFormat = 'VALUE';
 
         // Extract source columns
         const colsNode = ctableNode.getElementsByTagName('cols')[0];
@@ -382,7 +396,8 @@ function extractDerivedMapping(fieldNode) {
                 // Add to condition sets
                 mapping.conditionSets.push({
                     conditions: conditions,
-                    value: resultValue
+                    value: resultValue,
+                    outputFormat: outputFormat
                 });
 
                 // Add to main conditions array for backward compatibility
@@ -403,24 +418,18 @@ function extractDerivedMapping(fieldNode) {
     const elseNodes = fieldNode.getElementsByTagName('else');
 
     if (ifNodes.length > 0 || elseNodes.length > 0) {
-        // Determine format for this structure
-        for (let i = 0; i < ifNodes.length; i++) {
-            if (ifNodes[i].getElementsByTagName('src').length > 0) {
-                mapping.outputFormat = 'SOURCE';
-                break;
-            }
-        }
-
         // Process if node
         for (let i = 0; i < ifNodes.length; i++) {
             const ifNode = ifNodes[i];
             const refNode = ifNode.getElementsByTagName('ref')[0];
 
-            let srcNode, valueNode;
-            if (mapping.outputFormat === 'SOURCE') {
-                srcNode = ifNode.getElementsByTagName('src')[0];
-            } else {
-                valueNode = ifNode.getElementsByTagName('value')[0];
+            // Determine output format for this node
+            let outputFormat = 'VALUE';
+            let srcNode = ifNode.getElementsByTagName('src')[0];
+            let valueNode = ifNode.getElementsByTagName('value')[0];
+
+            if (srcNode && !valueNode) {
+                outputFormat = 'SOURCE';
             }
 
             const andNode = ifNode.getElementsByTagName('and')[0];
@@ -437,7 +446,7 @@ function extractDerivedMapping(fieldNode) {
 
                 // Get result value based on format
                 let resultValue = '';
-                if (mapping.outputFormat === 'SOURCE') {
+                if (outputFormat === 'SOURCE') {
                     resultValue = srcNode ? srcNode.textContent : '';
                 } else {
                     resultValue = valueNode ? valueNode.textContent : '';
@@ -445,7 +454,8 @@ function extractDerivedMapping(fieldNode) {
 
                 mapping.conditionSets.push({
                     conditions: conditions,
-                    value: resultValue
+                    value: resultValue,
+                    outputFormat: outputFormat
                 });
 
                 // Add to main conditions for backward compatibility
@@ -453,8 +463,9 @@ function extractDerivedMapping(fieldNode) {
             } else if (refNode) {
                 // This is a ref-based condition
                 let srcContent = '';
-                if (mapping.outputFormat === 'SOURCE') {
-                    srcContent = srcNode ? srcNode.textContent : '';
+                if (srcNode) {
+                    srcContent = srcNode.textContent;
+                    outputFormat = 'SOURCE';
                 }
 
                 const conditions = [{
@@ -465,7 +476,8 @@ function extractDerivedMapping(fieldNode) {
 
                 mapping.conditionSets.push({
                     conditions: conditions,
-                    value: srcContent || (valueNode ? valueNode.textContent : '')
+                    value: srcContent || (valueNode ? valueNode.textContent : ''),
+                    outputFormat: outputFormat
                 });
 
                 // Add to main conditions
@@ -480,19 +492,24 @@ function extractDerivedMapping(fieldNode) {
         // Process else node
         for (let i = 0; i < elseNodes.length; i++) {
             const elseNode = elseNodes[i];
+            let outputFormat = 'VALUE';
             let resultValue = '';
 
-            if (mapping.outputFormat === 'SOURCE') {
-                const srcNode = elseNode.getElementsByTagName('src')[0];
-                resultValue = srcNode ? srcNode.textContent : '';
-            } else {
-                const valueNode = elseNode.getElementsByTagName('value')[0];
-                resultValue = valueNode ? valueNode.textContent : '';
+            const srcNode = elseNode.getElementsByTagName('src')[0];
+            const valueNode = elseNode.getElementsByTagName('value')[0];
+
+            if (srcNode) {
+                resultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
+            } else if (valueNode) {
+                resultValue = valueNode.textContent;
+                outputFormat = 'VALUE';
             }
 
             mapping.conditionSets.push({
                 conditions: [], // Empty conditions = else
-                value: resultValue
+                value: resultValue,
+                outputFormat: outputFormat
             });
 
             // Use this as default value
@@ -508,9 +525,9 @@ function extractDerivedMapping(fieldNode) {
         value: '',
         conditionSets: [{
             conditions: [],
-            value: ''
-        }],
-        outputFormat: 'VALUE'
+            value: '',
+            outputFormat: 'VALUE'
+        }]
     };
 }
 
@@ -561,7 +578,10 @@ function parseAndDisplayMapping(xmlString) {
             throw new Error('XML parsing failed');
         }
 
-        currentMapping = extractMappingData(xmlDoc);
+        // Extract XML comments before parsing the fields
+        const comments = extractComments(xmlString);
+
+        currentMapping = extractMappingData(xmlDoc, comments);
         console.log("Current mapping set:", currentMapping);
         console.log("getCurrentMapping result:", window.getCurrentMapping());
 
@@ -581,11 +601,27 @@ function parseAndDisplayMapping(xmlString) {
 }
 
 // Extract mapping data from XML
-function extractMappingData(xmlDoc) {
+function extractMappingData(xmlDoc, comments) {
     console.log("Extracting mapping data from XML");
     const mappings = [];
     const fieldNodes = xmlDoc.getElementsByTagName('field');
     console.log("Field nodes found:", fieldNodes.length);
+
+    // Get the XML string representation of each field node
+    // We need this to find comment positions
+    const fieldStrings = [];
+    const serializer = new XMLSerializer();
+    for (let i = 0; i < fieldNodes.length; i++) {
+        fieldStrings.push(serializer.serializeToString(fieldNodes[i]));
+    }
+
+    // Calculate positions of fields in the original XML
+    let currentPosition = originalXmlStructure.indexOf('<field>');
+    const fieldPositions = [];
+    for (let i = 0; i < fieldStrings.length; i++) {
+        fieldPositions.push(currentPosition);
+        currentPosition = originalXmlStructure.indexOf('<field>', currentPosition + 1);
+    }
 
     for (let i = 0; i < fieldNodes.length; i++) {
         const fieldNode = fieldNodes[i];
@@ -594,8 +630,22 @@ function extractMappingData(xmlDoc) {
             mappingType: 'NONE',
             notes: '',
             tickets: '',
-            status: 'GOOD'
+            status: 'GOOD',
+            comments: [] // Array to store comments
         };
+
+        // Associate comments with this field based on position
+        if (comments && comments.length > 0) {
+            const fieldStart = fieldPositions[i];
+            const fieldEnd = i < fieldPositions.length - 1 ? fieldPositions[i + 1] : originalXmlStructure.length;
+
+            // Find comments that belong to this field
+            comments.forEach(comment => {
+                if (comment.position >= fieldStart && comment.position < fieldEnd) {
+                    mapping.comments.push(comment.text);
+                }
+            });
+        }
 
         const destNode = fieldNode.getElementsByTagName('dest')[0];
         if (destNode) {
@@ -657,18 +707,86 @@ function generateXml() {
     console.log("Generating XML");
     if (!currentMapping) return null;
 
-    let xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n';
+    let xmlContent = '';
+
+    // Preserve original XML content before <fields> tag if it exists
+    if (originalXmlStructure) {
+        const fieldsTagIndex = originalXmlStructure.indexOf('<fields>');
+        if (fieldsTagIndex !== -1) {
+            // Extract and use the header content
+            xmlContent = originalXmlStructure.substring(0, fieldsTagIndex);
+            // Ensure we have the <fields> tag
+            xmlContent += '<fields>\n';
+        } else {
+            // If no fields tag in original, use default header
+            xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n<fields>\n';
+        }
+    } else {
+        // Default header if no original structure
+        xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n<mappings>\n<fields>\n';
+    }
+
+    // Generate XML for each mapping
     currentMapping.forEach(mapping => {
         xmlContent += generateMappingXml(mapping);
     });
-    xmlContent += '</mappings>';
+
+    // Close the fields tag appropriately
+    if (originalXmlStructure && originalXmlStructure.includes('</fields>')) {
+        xmlContent += '</fields>\n';
+
+        // Check if there's content after the </fields> closing tag
+        const closingFieldsIndex = originalXmlStructure.indexOf('</fields>') + '</fields>'.length;
+        if (closingFieldsIndex < originalXmlStructure.length) {
+            // Append any content that appears after the </fields> tag
+            xmlContent += originalXmlStructure.substring(closingFieldsIndex);
+        } else {
+            // Otherwise just close the mappings tag
+            xmlContent += '</mappings>';
+        }
+    } else {
+        // Default closing tags
+        xmlContent += '</fields>\n</mappings>';
+    }
+
     return xmlContent;
+}
+
+// Function to extract comment tags from source XML
+function extractComments(xmlString) {
+    const comments = [];
+    let startIndex = 0;
+
+    while (true) {
+        const commentStart = xmlString.indexOf('<!--', startIndex);
+        if (commentStart === -1) break;
+
+        const commentEnd = xmlString.indexOf('-->', commentStart);
+        if (commentEnd === -1) break;
+
+        comments.push({
+            text: xmlString.substring(commentStart, commentEnd + 3),
+            position: commentStart
+        });
+
+        startIndex = commentEnd + 3;
+    }
+
+    return comments;
 }
 
 // Generate XML for a single mapping
 function generateMappingXml(mapping) {
     let xml = '  <field>\n';
     xml += `    <dest>${escapeXml(mapping.fieldName)}</dest>\n`;
+
+    // Preserve any comment that might exist in the original XML
+    if (mapping.comments && mapping.comments.length > 0) {
+        mapping.comments.forEach(comment => {
+            xml += `    ${comment}\n`;
+        });
+    }
+
     xml += `    <mapping-type>${escapeXml(mapping.mappingType)}</mapping-type>\n`;
 
     switch (mapping.mappingType) {
@@ -689,7 +807,7 @@ function generateMappingXml(mapping) {
         xml += `    <notes>${escapeXml(mapping.notes)}</notes>\n`;
     }
 
-    // First add status (changed order)
+    // First add status
     xml += `    <status>${escapeXml(mapping.status)}</status>\n`;
 
     // Then add tickets with <tickets> wrapper tags
@@ -710,14 +828,12 @@ function generateMappingXml(mapping) {
     return xml;
 }
 
+
 // Generate XML for derived mapping
 function generateDerivedXml(derivedMapping) {
     if (!derivedMapping) return '';
 
     let xml = '';
-
-    // Determine if we're using SOURCE format or VALUE format
-    const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
 
     // If we have multiple condition sets, use the ifelse format
     if (derivedMapping.conditionSets && derivedMapping.conditionSets.length > 0) {
@@ -746,6 +862,7 @@ function generateDerivedXml(derivedMapping) {
                     xml += '        </and>\n';
 
                     // Add the result using either <src> or <value> tag based on the outputFormat
+                    const isSourceFormat = conditionSet.outputFormat === 'SOURCE';
                     if (isSourceFormat) {
                         // When using source format, use <src> tag
                         xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
@@ -759,7 +876,11 @@ function generateDerivedXml(derivedMapping) {
             });
 
             // Add a default value with the appropriate tag
-            const defaultValue = derivedMapping.conditionSets[0]?.value || derivedMapping.value || '';
+            // Use the format of the first condition set for consistency
+            const defaultSet = derivedMapping.conditionSets[0];
+            const isSourceFormat = defaultSet && defaultSet.outputFormat === 'SOURCE';
+            const defaultValue = defaultSet?.value || '';
+
             if (isSourceFormat) {
                 xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
             } else {
@@ -821,7 +942,8 @@ function generateDerivedXml(derivedMapping) {
                         xml += '        </and>\n';
                     }
 
-                    // Add the result with the appropriate tag
+                    // Add the result with the appropriate tag based on this condition set's format
+                    const isSourceFormat = conditionSet.outputFormat === 'SOURCE';
                     if (isSourceFormat) {
                         xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
                     } else {
@@ -841,6 +963,7 @@ function generateDerivedXml(derivedMapping) {
             const elseSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
             if (elseSet) {
                 xml += '      <else>\n';
+                const isSourceFormat = elseSet.outputFormat === 'SOURCE';
                 if (isSourceFormat) {
                     xml += `        <src>${escapeXml(elseSet.value)}</src>\n`;
                 } else {
@@ -854,6 +977,9 @@ function generateDerivedXml(derivedMapping) {
     }
     // Fallback to the old format
     else if (derivedMapping.conditions && derivedMapping.conditions.length > 0) {
+        // Determine format from the global setting (backward compatibility)
+        const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
+
         xml += '    <ifelse>\n';
         xml += '      <if>\n';
         xml += '        <and>\n';

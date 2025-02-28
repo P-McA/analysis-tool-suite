@@ -1,4 +1,4 @@
-// MappingTableDialog.js
+// Updated MappingTableDialog component with per-condition output format
 const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave }) => {
     const [mappedValues, setMappedValues] = React.useState({
         src: initialData?.src || '',
@@ -8,50 +8,50 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
     const [derivedMapping, setDerivedMapping] = React.useState({
         conditions: initialData?.conditions || [],
         value: initialData?.value || '',
-        conditionSets: initialData?.conditionSets || [],
-        outputFormat: initialData?.outputFormat || 'VALUE' // 'VALUE' or 'SOURCE'
+        conditionSets: initialData?.conditionSets || []
+        // Removed global outputFormat
     });
 
     React.useEffect(() => {
-        // Detect output format from initialData
-        let detectedFormat = 'VALUE';
-
-        // Look at condition sets to determine format
-        if (initialData && initialData.conditionSets && initialData.conditionSets.length > 0) {
-            // If any condition set has a value that matches a source field,
-            // it suggests source output format
-            const hasSourceOutput = initialData.conditionSets.some(set =>
-                set.conditions.some(cond =>
-                    cond.src === set.value
-                )
-            );
-
-            if (hasSourceOutput) {
-                detectedFormat = 'SOURCE';
-            }
-        }
-
         // Initialize derived mapping with conditional sets if available
         if (mappingType === 'DERIVED' && initialData) {
             if (initialData.conditionSets && initialData.conditionSets.length > 0) {
+                // Ensure each condition set has its own outputFormat
+                const enhancedConditionSets = initialData.conditionSets.map(set => {
+                    // Detect output format for this specific set
+                    let outputFormat = 'VALUE'; // Default
+
+                    // Look for indicators that this set uses source format
+                    if (set.useSourceTag ||
+                        (set.conditions.some(cond => cond.src === set.value)) ||
+                        initialData.outputFormat === 'SOURCE') {
+                        outputFormat = 'SOURCE';
+                    }
+
+                    return {
+                        ...set,
+                        outputFormat
+                    };
+                });
+
                 setDerivedMapping({
                     ...derivedMapping,
-                    conditionSets: initialData.conditionSets,
+                    conditionSets: enhancedConditionSets,
                     // Keep conditions for backward compatibility
-                    conditions: initialData.conditions || [],
-                    outputFormat: detectedFormat
+                    conditions: initialData.conditions || []
                 });
             } else if (initialData.conditions && initialData.conditions.length > 0) {
                 // Convert old format to new format if needed
+                const outputFormat = initialData.outputFormat || 'VALUE';
                 const defaultSet = {
                     conditions: initialData.conditions || [],
-                    value: initialData.value || ''
+                    value: initialData.value || '',
+                    outputFormat
                 };
                 setDerivedMapping({
                     conditions: initialData.conditions || [],
                     value: initialData.value || '',
-                    conditionSets: [defaultSet],
-                    outputFormat: detectedFormat
+                    conditionSets: [defaultSet]
                 });
             } else {
                 // Initialize with empty condition set if nothing exists
@@ -60,19 +60,21 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                     value: initialData.value || '',
                     conditionSets: [{
                         conditions: [],
-                        value: initialData.value || ''
-                    }],
-                    outputFormat: detectedFormat
+                        value: initialData.value || '',
+                        outputFormat: 'VALUE' // Default to value
+                    }]
                 });
             }
         }
     }, [mappingType, initialData]);
 
-    // Handle changing output format
-    const handleOutputFormatChange = (format) => {
+    // Handle changing output format for a specific condition set
+    const handleOutputFormatChange = (setIndex, format) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+        newConditionSets[setIndex].outputFormat = format;
         setDerivedMapping({
             ...derivedMapping,
-            outputFormat: format
+            conditionSets: newConditionSets
         });
     };
 
@@ -121,7 +123,7 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
         };
 
         // If in SOURCE mode and changing src field, also update result value to match
-        if (derivedMapping.outputFormat === 'SOURCE' && field === 'src') {
+        if (newConditionSets[setIndex].outputFormat === 'SOURCE' && field === 'src') {
             newConditionSets[setIndex].value = value;
         }
 
@@ -148,7 +150,11 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
             ...derivedMapping,
             conditionSets: [
                 ...derivedMapping.conditionSets,
-                { conditions: [], value: '' }
+                {
+                    conditions: [],
+                    value: '',
+                    outputFormat: 'VALUE' // Default to VALUE for new sets
+                }
             ]
         });
     };
@@ -180,6 +186,7 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
         }
         onClose();
     };
+
     // If the dialog is not open, don't render anything
     if (!isOpen) return null;
 
@@ -276,41 +283,6 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
 
                 {mappingType === 'DERIVED' && (
                     <div>
-                        {/* Output Format Selection */}
-                        <div className="mb-6 bg-gray-50 p-4 rounded-lg border">
-                            <h3 className="text-lg font-semibold mb-2">Result Format</h3>
-                            <div className="flex space-x-4">
-                                <label className="inline-flex items-center">
-                                    <input
-                                        type="radio"
-                                        name="outputFormat"
-                                        value="VALUE"
-                                        checked={derivedMapping.outputFormat === 'VALUE'}
-                                        onChange={() => handleOutputFormatChange('VALUE')}
-                                        className="mr-2"
-                                    />
-                                    <span className="text-gray-700">Use value tag</span>
-                                </label>
-                                <label className="inline-flex items-center">
-                                    <input
-                                        type="radio"
-                                        name="outputFormat"
-                                        value="SOURCE"
-                                        checked={derivedMapping.outputFormat === 'SOURCE'}
-                                        onChange={() => handleOutputFormatChange('SOURCE')}
-                                        className="mr-2"
-                                    />
-                                    <span className="text-gray-700">Use source tag</span>
-                                </label>
-                            </div>
-                            <p className="text-sm text-gray-500 mt-2">
-                                {derivedMapping.outputFormat === 'SOURCE' ?
-                                    "When a condition is met, source field value will be used as the result." :
-                                    "When a condition is met, the specified result value will be used."
-                                }
-                            </p>
-                        </div>
-
                         {derivedMapping.conditionSets.map((conditionSet, setIndex) => (
                             <div
                                 key={setIndex}
@@ -384,6 +356,35 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                                     </button>
                                 </div>
 
+                                {/* Per-condition set output format selector */}
+                                <div className="mb-4 bg-white p-3 rounded border">
+                                    <h4 className="text-md font-medium mb-2">Result Format</h4>
+                                    <div className="flex space-x-4">
+                                        <label className="inline-flex items-center">
+                                            <input
+                                                type="radio"
+                                                name={`outputFormat_${setIndex}`}
+                                                value="VALUE"
+                                                checked={conditionSet.outputFormat === 'VALUE'}
+                                                onChange={() => handleOutputFormatChange(setIndex, 'VALUE')}
+                                                className="mr-2"
+                                            />
+                                            <span className="text-gray-700">Use value tag</span>
+                                        </label>
+                                        <label className="inline-flex items-center">
+                                            <input
+                                                type="radio"
+                                                name={`outputFormat_${setIndex}`}
+                                                value="SOURCE"
+                                                checked={conditionSet.outputFormat === 'SOURCE'}
+                                                onChange={() => handleOutputFormatChange(setIndex, 'SOURCE')}
+                                                className="mr-2"
+                                            />
+                                            <span className="text-gray-700">Use source tag</span>
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <div>
                                     <h4 className="text-md font-medium mb-2">Result Value</h4>
                                     <input
@@ -391,12 +392,12 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                                         value={conditionSet.value}
                                         onChange={(e) => handleResultValueChange(setIndex, e.target.value)}
                                         className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${
-                                            derivedMapping.outputFormat === 'SOURCE' ? 'bg-gray-100' : ''
+                                            conditionSet.outputFormat === 'SOURCE' ? 'bg-gray-100' : ''
                                         }`}
                                         placeholder="Enter result value"
-                                        disabled={derivedMapping.outputFormat === 'SOURCE' && conditionSet.conditions.length > 0}
+                                        disabled={conditionSet.outputFormat === 'SOURCE' && conditionSet.conditions.length > 0}
                                     />
-                                    {derivedMapping.outputFormat === 'SOURCE' && conditionSet.conditions.length > 0 && (
+                                    {conditionSet.outputFormat === 'SOURCE' && conditionSet.conditions.length > 0 && (
                                         <p className="text-xs text-gray-500 mt-1">
                                             In source mode, result value will be the same as the source field.
                                         </p>
