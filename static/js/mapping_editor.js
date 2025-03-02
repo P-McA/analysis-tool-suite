@@ -6,6 +6,7 @@ let currentMapping = null;
 let originalXmlStructure = null;
 let filteredMappings = null;
 let forceUpdate = null;
+let orderPreferenceModalOpen = false;
 
 // Constants for mapping types
 const MAPPING_TYPES = [
@@ -1119,7 +1120,50 @@ function handleSaveChanges() {
         return;
     }
 
+    // Show order preference modal instead of immediately saving
+    showOrderPreferenceModal();
+}
+
+// New function to show the field order preference modal
+function showOrderPreferenceModal() {
+    console.log("Opening order preference modal");
+    const modalRoot = document.getElementById('orderPreferenceModalRoot');
+    if (!modalRoot) {
+        console.error("Order preference modal root not found");
+        return;
+    }
+
+    orderPreferenceModalOpen = true;
+
+    ReactDOM.render(
+        React.createElement(window.OrderPreferenceModal, {
+            isOpen: true,
+            onClose: () => {
+                orderPreferenceModalOpen = false;
+                ReactDOM.unmountComponentAtNode(modalRoot);
+            },
+            onSave: (preference) => {
+                console.log("Saving with preference:", preference);
+                processSaveWithPreference(preference);
+                orderPreferenceModalOpen = false;
+                ReactDOM.unmountComponentAtNode(modalRoot);
+            }
+        }),
+        modalRoot
+    );
+}
+
+// New function to handle the actual saving with the selected preference
+function processSaveWithPreference(preference) {
     try {
+        // If preference is alphabetical, sort the mapping
+        if (preference === 'alphabetical') {
+            currentMapping.sort((a, b) => a.fieldName.toLowerCase().localeCompare(b.fieldName.toLowerCase()));
+            console.log("Sorted mapping alphabetically");
+        } else {
+            console.log("Preserving original field order");
+        }
+
         const xmlContent = generateXml();
         if (!xmlContent) {
             throw new Error('Failed to generate XML content');
@@ -1132,7 +1176,7 @@ function handleSaveChanges() {
     }
 }
 
-// Download XML file
+// Download XML file - keeping your original function
 function downloadXmlFile(xmlContent) {
     console.log("Downloading XML file");
     const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' });
@@ -1146,17 +1190,27 @@ function downloadXmlFile(xmlContent) {
     document.body.removeChild(a);
 }
 
-// Clean up any existing dialogs
+// Clean up any existing dialogs - updated to include the new modal
 function cleanupDialogs() {
     const dialogRoot = document.getElementById('mappingTableDialogRoot');
     if (dialogRoot) {
         ReactDOM.unmountComponentAtNode(dialogRoot);
     }
+
+    // Also clean up order preference modal
+    const orderPreferenceModalRoot = document.getElementById('orderPreferenceModalRoot');
+    if (orderPreferenceModalRoot) {
+        ReactDOM.unmountComponentAtNode(orderPreferenceModalRoot);
+    }
 }
 
-// Handle window unload
-window.addEventListener('unload', () => {
-    cleanupDialogs();
+// Update the beforeunload handler to check for the order preference modal
+window.addEventListener('beforeunload', (event) => {
+    if ((currentMapping && currentMapping.length > 0) || orderPreferenceModalOpen) {
+        const message = 'You have unsaved changes. Are you sure you want to leave?';
+        event.returnValue = message;
+        return message;
+    }
 });
 
 // Export necessary functions to window object

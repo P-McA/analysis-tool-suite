@@ -65,8 +65,9 @@
             <!-- Filter Section (hidden, but kept for backward compatibility) -->
             <div id="filterSection" style="display: none;"></div>
 
-            <!-- Dialog Root for Modals -->
+            <!-- Dialog Roots for Modals -->
             <div id="mappingTableDialogRoot"></div>
+            <div id="orderPreferenceModalRoot"></div>
 
             <!-- Enhanced Mapping Table -->
             <div id="mappingTableContainer" class="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -88,6 +89,7 @@
     <script type="text/babel" src="{{ url_for('static', filename='js/TicketTagsInput.js') }}"></script>
     <script type="text/babel" src="{{ url_for('static', filename='js/EnhancedMappingTable.js') }}"></script>
     <script type="text/babel" src="{{ url_for('static', filename='js/mappingTableDialog.js') }}"></script>
+    <script type="text/babel" src="{{ url_for('static', filename='js/OrderPreferenceModal.js') }}"></script>
     <script src="{{ url_for('static', filename='js/mapping_editor.js') }}"></script>
 
     <!-- Initialize React Components -->
