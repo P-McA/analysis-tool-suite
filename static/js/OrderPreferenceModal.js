@@ -36,7 +36,7 @@ const OrderPreferenceModal = ({ isOpen, onClose, onSave }) => {
                                 onChange={() => setPreference('original')}
                                 className="h-4 w-4 text-blue-600"
                             />
-                            <span className="text-gray-900">Preserve current order</span>
+                            <span className="text-gray-900">Preserve original field order from source file</span>
                         </label>
 
                         <label className="flex items-center space-x-2">

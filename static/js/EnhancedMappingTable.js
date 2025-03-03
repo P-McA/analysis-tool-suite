@@ -105,24 +105,32 @@ const EnhancedMappingTable = () => {
 
     // Sort mappings based on current sort field and direction
     // But always keep newly added rows at the top
-    const sortedMappings = React.useMemo(() => {
-        // Split mappings into new and existing
-        const newRows = filteredMappings.filter(isNewlyAdded);
-        const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
+const sortedMappings = React.useMemo(() => {
+    // Split mappings into new and existing
+    const newRows = filteredMappings.filter(isNewlyAdded);
+    const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
 
-        // Sort only the existing rows
-        const sortedExisting = [...existingRows].sort((a, b) => {
-            let aValue = a[sortField] || '';
-            let bValue = b[sortField] || '';
-            if (typeof aValue === 'string') aValue = aValue.toLowerCase();
-            if (typeof bValue === 'string') bValue = bValue.toLowerCase();
-            const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-            return sortDirection === 'asc' ? comparison : -comparison;
-        });
+    // Sort only the existing rows
+    const sortedExisting = [...existingRows].sort((a, b) => {
+        // If sortField is 'originalIndex', use that for sorting
+        if (sortField === 'originalIndex') {
+            return sortDirection === 'asc'
+                ? (a.originalIndex || 0) - (b.originalIndex || 0)
+                : (b.originalIndex || 0) - (a.originalIndex || 0);
+        }
 
-        // Combine with new rows at the top
-        return [...newRows, ...sortedExisting];
-    }, [filteredMappings, sortField, sortDirection, updateTimestamp]);
+        // Otherwise use regular string/value comparison
+        let aValue = a[sortField] || '';
+        let bValue = b[sortField] || '';
+        if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+        if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+        const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    // Combine with new rows at the top
+    return [...newRows, ...sortedExisting];
+}, [filteredMappings, sortField, sortDirection, updateTimestamp]);
 
     const handleSort = (field) => {
         console.log("Sorting by field:", field);

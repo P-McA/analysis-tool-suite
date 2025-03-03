@@ -632,7 +632,8 @@ function extractMappingData(xmlDoc, comments) {
             notes: '',
             tickets: '',
             status: 'GOOD',
-            comments: [] // Array to store comments
+            comments: [], // Array to store comments
+            originalIndex: i // Store the original position in the XML
         };
 
         // Associate comments with this field based on position
@@ -701,12 +702,15 @@ function extractMappingData(xmlDoc, comments) {
         console.log(`Extracted mapping ${i + 1}:`, mapping);
     }
 
-    return mappings.sort((a, b) => a.fieldName.toLowerCase().localeCompare(b.fieldName.toLowerCase()));
+    // Do not sort by default, preserve the original order
+    return mappings;
 }
 // Generate XML for saving
-function generateXml() {
+function generateXml(mappingsToUse) {
     console.log("Generating XML");
-    if (!currentMapping) return null;
+    // Use provided mappings or fall back to current mapping
+    const mappingsArray = mappingsToUse || currentMapping;
+    if (!mappingsArray) return null;
 
     let xmlContent = '';
 
@@ -728,7 +732,7 @@ function generateXml() {
     }
 
     // Generate XML for each mapping
-    currentMapping.forEach(mapping => {
+    mappingsArray.forEach(mapping => {
         xmlContent += generateMappingXml(mapping);
     });
 
@@ -1156,15 +1160,21 @@ function showOrderPreferenceModal() {
 // New function to handle the actual saving with the selected preference
 function processSaveWithPreference(preference) {
     try {
+        // Create a copy of the current mapping to avoid modifying the original
+        let mappingsToSave = [...currentMapping];
+
         // If preference is alphabetical, sort the mapping
         if (preference === 'alphabetical') {
-            currentMapping.sort((a, b) => a.fieldName.toLowerCase().localeCompare(b.fieldName.toLowerCase()));
+            mappingsToSave.sort((a, b) => a.fieldName.toLowerCase().localeCompare(b.fieldName.toLowerCase()));
             console.log("Sorted mapping alphabetically");
         } else {
+            // If original order preference, sort by the originalIndex property we added
+            mappingsToSave.sort((a, b) => (a.originalIndex || 0) - (b.originalIndex || 0));
             console.log("Preserving original field order");
         }
 
-        const xmlContent = generateXml();
+        // We'll use this sorted mapping just for generating XML
+        const xmlContent = generateXml(mappingsToSave);
         if (!xmlContent) {
             throw new Error('Failed to generate XML content');
         }
