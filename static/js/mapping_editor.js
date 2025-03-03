@@ -238,19 +238,19 @@ function extractDerivedMapping(fieldNode) {
                 });
 
                 // Determine the output format for this condition set
-                let outputFormat = 'VALUE'; // Default
+                let outputFormat = 'VALUE'; // Default to VALUE if <value> tag is found
                 let resultValue = '';
 
-                // Check if using src or value tag for the result
-                const srcNode = ifNode.getElementsByTagName('src')[0];
+                // Check for value tag first (since your examples show this is the desired format)
                 const valueNode = ifNode.getElementsByTagName('value')[0];
+                const srcNode = ifNode.getElementsByTagName('src')[0];
 
-                if (srcNode) {
-                    resultValue = srcNode.textContent;
-                    outputFormat = 'SOURCE';
-                } else if (valueNode) {
+                if (valueNode) {
                     resultValue = valueNode.textContent;
                     outputFormat = 'VALUE';
+                } else if (srcNode) {
+                    resultValue = srcNode.textContent;
+                    outputFormat = 'SOURCE';
                 }
 
                 // Add to conditions array (for backward compatibility)
@@ -280,18 +280,18 @@ function extractDerivedMapping(fieldNode) {
                 });
 
                 // Determine output format for this condition
-                let outputFormat = 'VALUE'; // Default
+                let outputFormat = 'VALUE'; // Default to VALUE
                 let resultValue = '';
 
-                const srcNode = elseIfNode.getElementsByTagName('src')[0];
                 const valueNode = elseIfNode.getElementsByTagName('value')[0];
+                const srcNode = elseIfNode.getElementsByTagName('src')[0];
 
-                if (srcNode) {
-                    resultValue = srcNode.textContent;
-                    outputFormat = 'SOURCE';
-                } else if (valueNode) {
+                if (valueNode) {
                     resultValue = valueNode.textContent;
                     outputFormat = 'VALUE';
+                } else if (srcNode) {
+                    resultValue = srcNode.textContent;
+                    outputFormat = 'SOURCE';
                 }
 
                 mapping.conditionSets.push({
@@ -305,18 +305,18 @@ function extractDerivedMapping(fieldNode) {
         // Process else node
         if (elseNodes.length > 0) {
             const elseNode = elseNodes[0];
-            let outputFormat = 'VALUE'; // Default
+            let outputFormat = 'VALUE'; // Default to VALUE
             let defaultValue = '';
 
-            const srcNode = elseNode.getElementsByTagName('src')[0];
             const valueNode = elseNode.getElementsByTagName('value')[0];
+            const srcNode = elseNode.getElementsByTagName('src')[0];
 
-            if (srcNode) {
-                defaultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            } else if (valueNode) {
+            if (valueNode) {
                 defaultValue = valueNode.textContent;
                 outputFormat = 'VALUE';
+            } else if (srcNode) {
+                defaultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
             }
 
             mapping.conditionSets.push({
@@ -330,17 +330,17 @@ function extractDerivedMapping(fieldNode) {
         } else {
             // Check for a default value at the ifelse level
             let defaultValue = '';
-            let outputFormat = 'VALUE'; // Default
+            let outputFormat = 'VALUE'; // Default to VALUE
 
-            const srcNode = ifElseNode.getElementsByTagName('src')[0];
             const valueNode = ifElseNode.getElementsByTagName('value')[0];
+            const srcNode = ifElseNode.getElementsByTagName('src')[0];
 
-            if (srcNode) {
-                defaultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            } else if (valueNode) {
+            if (valueNode) {
                 defaultValue = valueNode.textContent;
                 outputFormat = 'VALUE';
+            } else if (srcNode) {
+                defaultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
             }
 
             // If we have condition sets but no else, add a default condition set
@@ -425,11 +425,17 @@ function extractDerivedMapping(fieldNode) {
             const refNode = ifNode.getElementsByTagName('ref')[0];
 
             // Determine output format for this node
-            let outputFormat = 'VALUE';
-            let srcNode = ifNode.getElementsByTagName('src')[0];
-            let valueNode = ifNode.getElementsByTagName('value')[0];
+            let outputFormat = 'VALUE'; // Default to VALUE
+            let resultValue = '';
 
-            if (srcNode && !valueNode) {
+            const valueNode = ifNode.getElementsByTagName('value')[0];
+            const srcNode = ifNode.getElementsByTagName('src')[0];
+
+            if (valueNode) {
+                resultValue = valueNode.textContent;
+                outputFormat = 'VALUE';
+            } else if (srcNode) {
+                resultValue = srcNode.textContent;
                 outputFormat = 'SOURCE';
             }
 
@@ -444,14 +450,6 @@ function extractDerivedMapping(fieldNode) {
                         value: condNode.getElementsByTagName('value')[0]?.textContent || ''
                     });
                 });
-
-                // Get result value based on format
-                let resultValue = '';
-                if (outputFormat === 'SOURCE') {
-                    resultValue = srcNode ? srcNode.textContent : '';
-                } else {
-                    resultValue = valueNode ? valueNode.textContent : '';
-                }
 
                 mapping.conditionSets.push({
                     conditions: conditions,
@@ -493,18 +491,18 @@ function extractDerivedMapping(fieldNode) {
         // Process else node
         for (let i = 0; i < elseNodes.length; i++) {
             const elseNode = elseNodes[i];
-            let outputFormat = 'VALUE';
+            let outputFormat = 'VALUE'; // Default to VALUE
             let resultValue = '';
 
-            const srcNode = elseNode.getElementsByTagName('src')[0];
             const valueNode = elseNode.getElementsByTagName('value')[0];
+            const srcNode = elseNode.getElementsByTagName('src')[0];
 
-            if (srcNode) {
-                resultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            } else if (valueNode) {
+            if (valueNode) {
                 resultValue = valueNode.textContent;
                 outputFormat = 'VALUE';
+            } else if (srcNode) {
+                resultValue = srcNode.textContent;
+                outputFormat = 'SOURCE';
             }
 
             mapping.conditionSets.push({
@@ -527,7 +525,7 @@ function extractDerivedMapping(fieldNode) {
         conditionSets: [{
             conditions: [],
             value: '',
-            outputFormat: 'VALUE'
+            outputFormat: 'VALUE' // Default to VALUE format instead of SOURCE
         }]
     };
 }
@@ -874,7 +872,7 @@ function generateDerivedXml(derivedMapping) {
                         // When using source format, use <src> tag
                         xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
                     } else {
-                        // When using value format, use <value> tag
+                        // When using value format, use <value> tag (this is the format in your examples)
                         xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
                     }
 
@@ -882,12 +880,15 @@ function generateDerivedXml(derivedMapping) {
                 }
             });
 
-            // Add a default value with the appropriate tag
-            // Use the format of the first condition set for consistency
-            const defaultSet = derivedMapping.conditionSets[0];
-            const isSourceFormat = defaultSet && defaultSet.outputFormat === 'SOURCE';
-            const defaultValue = defaultSet?.value || '';
+            // Find a default condition set (without conditions) to use for the default value
+            const defaultSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
 
+            // If no explicit default set, use the format from the first condition set
+            const formatReference = defaultSet || derivedMapping.conditionSets[0] || { outputFormat: 'VALUE' };
+            const isSourceFormat = formatReference.outputFormat === 'SOURCE';
+            const defaultValue = defaultSet?.value || derivedMapping.value || '';
+
+            // Add default value with the appropriate tag
             if (isSourceFormat) {
                 xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
             } else {
@@ -896,7 +897,7 @@ function generateDerivedXml(derivedMapping) {
 
             xml += '    </ifelse>\n';
         } else {
-            // Handle complex if/else-if/else structure seen in Image 3
+            // Handle complex if/else-if/else structure seen in the images
             xml += '    <ifelse>\n';
 
             // First handle all condition sets with conditions (if and else-if)
@@ -984,7 +985,7 @@ function generateDerivedXml(derivedMapping) {
     }
     // Fallback to the old format
     else if (derivedMapping.conditions && derivedMapping.conditions.length > 0) {
-        // Determine format from the global setting (backward compatibility)
+        // Default to VALUE format unless explicitly set otherwise
         const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
 
         xml += '    <ifelse>\n';

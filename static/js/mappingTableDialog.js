@@ -13,60 +13,62 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
     });
 
     React.useEffect(() => {
-        // Initialize derived mapping with conditional sets if available
-        if (mappingType === 'DERIVED' && initialData) {
-            if (initialData.conditionSets && initialData.conditionSets.length > 0) {
-                // Ensure each condition set has its own outputFormat
-                const enhancedConditionSets = initialData.conditionSets.map(set => {
-                    // Detect output format for this specific set
-                    let outputFormat = 'VALUE'; // Default
+    // Initialize derived mapping with conditional sets if available
+    if (mappingType === 'DERIVED' && initialData) {
+        if (initialData.conditionSets && initialData.conditionSets.length > 0) {
+            // Ensure each condition set has its own outputFormat
+            const enhancedConditionSets = initialData.conditionSets.map(set => {
+                // Detect output format for this specific set
+                let outputFormat = set.outputFormat || 'VALUE'; // Default to VALUE format
 
-                    // Look for indicators that this set uses source format
-                    if (set.useSourceTag ||
-                        (set.conditions.some(cond => cond.src === set.value)) ||
-                        initialData.outputFormat === 'SOURCE') {
-                        outputFormat = 'SOURCE';
-                    }
+                // Look for indicators that this set uses source format if the format isn't specified
+                if (!set.outputFormat && (
+                    set.useSourceTag ||
+                    (set.conditions.some(cond => cond.src === set.value)) ||
+                    initialData.outputFormat === 'SOURCE')
+                ) {
+                    outputFormat = 'SOURCE';
+                }
 
-                    return {
-                        ...set,
-                        outputFormat
-                    };
-                });
-
-                setDerivedMapping({
-                    ...derivedMapping,
-                    conditionSets: enhancedConditionSets,
-                    // Keep conditions for backward compatibility
-                    conditions: initialData.conditions || []
-                });
-            } else if (initialData.conditions && initialData.conditions.length > 0) {
-                // Convert old format to new format if needed
-                const outputFormat = initialData.outputFormat || 'VALUE';
-                const defaultSet = {
-                    conditions: initialData.conditions || [],
-                    value: initialData.value || '',
+                return {
+                    ...set,
                     outputFormat
                 };
-                setDerivedMapping({
-                    conditions: initialData.conditions || [],
-                    value: initialData.value || '',
-                    conditionSets: [defaultSet]
-                });
-            } else {
-                // Initialize with empty condition set if nothing exists
-                setDerivedMapping({
+            });
+
+            setDerivedMapping({
+                ...derivedMapping,
+                conditionSets: enhancedConditionSets,
+                // Keep conditions for backward compatibility
+                conditions: initialData.conditions || []
+            });
+        } else if (initialData.conditions && initialData.conditions.length > 0) {
+            // Convert old format to new format if needed
+            const outputFormat = initialData.outputFormat || 'VALUE'; // Default to VALUE
+            const defaultSet = {
+                conditions: initialData.conditions || [],
+                value: initialData.value || '',
+                outputFormat
+            };
+            setDerivedMapping({
+                conditions: initialData.conditions || [],
+                value: initialData.value || '',
+                conditionSets: [defaultSet]
+            });
+        } else {
+            // Initialize with empty condition set if nothing exists
+            setDerivedMapping({
+                conditions: [],
+                value: initialData.value || '',
+                conditionSets: [{
                     conditions: [],
                     value: initialData.value || '',
-                    conditionSets: [{
-                        conditions: [],
-                        value: initialData.value || '',
-                        outputFormat: 'VALUE' // Default to value
-                    }]
-                });
-            }
+                    outputFormat: 'VALUE' // Default to VALUE format
+                }]
+            });
         }
-    }, [mappingType, initialData]);
+    }
+}, [mappingType, initialData]);
 
     // Handle changing output format for a specific condition set
     const handleOutputFormatChange = (setIndex, format) => {
@@ -369,7 +371,7 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                                                 onChange={() => handleOutputFormatChange(setIndex, 'VALUE')}
                                                 className="mr-2"
                                             />
-                                            <span className="text-gray-700">Use value tag</span>
+                                            <span className="text-gray-700">Use value tag (preferred)</span>
                                         </label>
                                         <label className="inline-flex items-center">
                                             <input
