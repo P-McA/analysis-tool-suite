@@ -193,7 +193,7 @@ function resetMappingTypeData(mapping, newType) {
         !['PASSED_THROUGH', 'DEFAULTED'].includes(newType)) {
         mapping.source = '';
     }
-let savedConditions = null;
+    let savedConditions = null;
     if (mapping.derivedMapping && mapping.derivedMapping.conditions) {
         savedConditions = mapping.derivedMapping.conditions.map(cond => ({
             ...cond,
@@ -222,6 +222,7 @@ let savedConditions = null;
             break;
     }
 }
+
 const handleConditionChange = (setIndex, condIndex, field, value) => {
     const newConditionSets = [...derivedMapping.conditionSets];
 
@@ -245,6 +246,7 @@ const handleConditionChange = (setIndex, condIndex, field, value) => {
 
     setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
 };
+
 function debugDerivedMapping(fieldNode, mapping) {
     console.log("DEBUG: Derived Mapping Extraction");
     console.log("------------------------------");
@@ -306,13 +308,198 @@ function debugMappingDialogValues(data) {
     console.log("Main value:", data.value);
     console.log("------------------------------");
 }
+
 // Make these functions available globally
 window.handleAddRow = handleAddRow;
 window.handleMappingDelete = handleMappingDelete;
 window.handleMappingUpdate = handleMappingUpdate;
 window.getCurrentMapping = () => currentMapping || [];
 
-// Extract derived mapping data
+// Helper functions for condition processing
+function isInsideCondition(node) {
+    let parent = node.parentNode;
+    while (parent && parent !== fieldNode) {
+        if (parent.tagName === 'cond') {
+            return true;
+        }
+        parent = parent.parentNode;
+    }
+    return false;
+}
+
+function processCondNode(condNode) {
+    // Extract src, oper, and all value nodes
+    const srcNodes = condNode.getElementsByTagName('src');
+    const operNodes = condNode.getElementsByTagName('oper');
+    const valueNodes = condNode.getElementsByTagName('value');
+
+    const values = Array.from(valueNodes).map(node => node.textContent);
+
+    return {
+        src: srcNodes.length > 0 ? srcNodes[0].textContent : '',
+        oper: operNodes.length > 0 ? operNodes[0].textContent : 'EQUALS',
+        value: values.length > 0 ? values[0] : '',
+        additionalValues: values.length > 1 ? values.slice(1) : []
+    };
+}
+
+function processConditionSet(parentNode, andNode) {
+    const conditions = [];
+    const condNodes = andNode.getElementsByTagName('cond');
+
+    // Process each condition node
+    Array.from(condNodes).forEach(condNode => {
+        conditions.push(processCondNode(condNode));
+    });
+
+    // Get result value (source or value tag)
+    let resultValue = '';
+    let outputFormat = 'VALUE';
+
+    // Look for direct src or value tags that are children of the parent
+    // and not inside the and block
+    for (let i = 0; i < parentNode.childNodes.length; i++) {
+        const node = parentNode.childNodes[i];
+        if (node.nodeType === 1) {
+            if (node.tagName === 'src' && node !== andNode && !andNode.contains(node)) {
+                resultValue = node.textContent;
+                outputFormat = 'SOURCE';
+                break;
+            } else if (node.tagName === 'value' && node !== andNode && !andNode.contains(node)) {
+                resultValue = node.textContent;
+                outputFormat = 'VALUE';
+                break;
+            }
+        }
+    }
+
+    // Extract special tags
+    const specialTags = extractSpecialTags(parentNode);
+
+    return {
+        conditions: conditions,
+        value: resultValue,
+        outputFormat: outputFormat,
+        specialTags: specialTags
+    };
+}
+
+function processOrNode(parentNode, orNode) {
+    // This is for handling the complex OR structure
+    const orConditions = [];
+
+    // Process each AND node within the OR
+    const andNodes = orNode.getElementsByTagName('and');
+    Array.from(andNodes).forEach(andNode => {
+        // Extract REF tags in each AND
+        const refTags = extractRefTags(andNode);
+
+        // Process conditions if any
+        const condNodes = andNode.getElementsByTagName('cond');
+        const conditions = Array.from(condNodes).map(processCondNode);
+
+        orConditions.push({
+            type: 'AND',
+            conditions: conditions,
+            refTags: refTags
+        });
+    });
+
+    // Handle nvl tags if present
+    const nvlNodes = orNode.getElementsByTagName('nvl');
+    if (nvlNodes.length > 0) {
+        const nvlData = Array.from(nvlNodes).map(nvlNode => {
+            const srcNodes = nvlNode.getElementsByTagName('src');
+            return {
+                type: 'NVL',
+                sources: Array.from(srcNodes).map(src => src.textContent)
+            };
+        });
+        orConditions.push({
+            type: 'NVL',
+            data: nvlData
+        });
+    }
+
+    // Find result value or source
+    let resultValue = '';
+    let outputFormat = 'VALUE';
+
+    // Look for direct value or src tags after the OR structure
+    for (let i = 0; i < parentNode.childNodes.length; i++) {
+        const node = parentNode.childNodes[i];
+        if (node.nodeType === 1) {
+            if (node.tagName === 'src' && node !== orNode && !orNode.contains(node)) {
+                resultValue = node.textContent;
+                outputFormat = 'SOURCE';
+                break;
+            } else if (node.tagName === 'value' && node !== orNode && !orNode.contains(node)) {
+                resultValue = node.textContent;
+                outputFormat = 'VALUE';
+                break;
+            }
+        }
+    }
+
+    return {
+        orStructure: true,
+        orConditions: orConditions,
+        value: resultValue,
+        outputFormat: outputFormat,
+        specialTags: extractSpecialTags(parentNode, true) // Exclude those in orConditions
+    };
+}
+
+function extractRefTags(node) {
+    const refNodes = node.getElementsByTagName('ref');
+    return Array.from(refNodes).map(refNode => ({
+        type: 'REF',
+        value: refNode.textContent
+    }));
+}
+
+function extractSpecialTags(node, excludeChildren = false) {
+    const specialTags = [];
+
+    // Extract NVL tags
+    const nvlNodes = node.getElementsByTagName('nvl');
+    for (let i = 0; i < nvlNodes.length; i++) {
+        const nvlNode = nvlNodes[i];
+
+        // Only include if it's a direct child or we're not excluding children
+        if (!excludeChildren || nvlNode.parentNode === node) {
+            const srcNodes = nvlNode.getElementsByTagName('src');
+            const srcValues = [];
+
+            for (let j = 0; j < srcNodes.length; j++) {
+                srcValues.push(srcNodes[j].textContent);
+            }
+
+            specialTags.push({
+                type: 'NVL',
+                sources: srcValues
+            });
+        }
+    }
+
+    // Extract REF tags
+    const refNodes = node.getElementsByTagName('ref');
+    for (let i = 0; i < refNodes.length; i++) {
+        const refNode = refNodes[i];
+
+        // Only include if it's a direct child or we're not excluding children
+        if (!excludeChildren || refNode.parentNode === node) {
+            specialTags.push({
+                type: 'REF',
+                value: refNode.textContent
+            });
+        }
+    }
+
+    return specialTags;
+}
+
+// Extract derived mapping data - UPDATED
 function extractDerivedMapping(fieldNode) {
     console.log("Extracting derived mapping");
 
@@ -369,6 +556,7 @@ function extractDerivedMapping(fieldNode) {
             }
         }
     }
+
     // If we found standalone NVL/REF tags and no ifelse structure,
     // create a default condition set to hold them
     if (mapping.specialTags.length > 0 && !fieldNode.getElementsByTagName('ifelse')[0]) {
@@ -381,140 +569,179 @@ function extractDerivedMapping(fieldNode) {
         console.log("Created default condition set for standalone NVL/REF tags");
     }
 
+    // Handle direct <src> tag outside of ifelse structures
+    const directSrcNodes = Array.from(fieldNode.childNodes).filter(
+        node => node.nodeType === 1 && node.tagName === 'src' && node.parentNode === fieldNode
+    );
+    if (directSrcNodes.length > 0) {
+        mapping.directSrc = directSrcNodes[0].textContent;
+    }
+
+    // Check for ctable structure (like in Image 2)
+    const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
+    if (ctableNode) {
+        // This is actually a MAPPED type, but we'll extract it anyway for completeness
+        // and handle it later
+        const mappedValues = extractMappedValues(fieldNode);
+        mapping.ctableData = mappedValues;
+    }
+
     // Check for ifelse structure
     const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
     if (ifElseNode) {
+        // Get all if, else-if, and else nodes in order
         const ifNodes = Array.from(ifElseNode.getElementsByTagName('if'));
         const elseIfNodes = Array.from(ifElseNode.getElementsByTagName('else-if'));
         const elseNodes = Array.from(ifElseNode.getElementsByTagName('else'));
 
-        // Extract the conditions from each "if" node
+        // Handle if nodes
         ifNodes.forEach(ifNode => {
-            const andNode = ifNode.getElementsByTagName('and')[0];
-            if (andNode) {
-                const conditions = [];
-                const condNodes = andNode.getElementsByTagName('cond');
-                Array.from(condNodes).forEach(condNode => {
-                    // Get all value tags for this condition
-                    const valueNodes = condNode.getElementsByTagName('value');
-                    const values = Array.from(valueNodes).map(node => node.textContent);
-
-                    conditions.push({
-                        src: condNode.getElementsByTagName('src')[0]?.textContent || '',
-                        oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                        value: values[0] || '', // Keep the first value in the main value field for compatibility
-                        additionalValues: values.slice(1) // Store additional values in a new array
-                    });
+            // Check for and blocks
+            const andNodes = ifNode.getElementsByTagName('and');
+            if (andNodes.length > 0) {
+                // Process and nodes
+                Array.from(andNodes).forEach(andNode => {
+                    const conditionSet = processConditionSet(ifNode, andNode);
+                    mapping.conditionSets.push(conditionSet);
+                    mapping.conditions.push(...conditionSet.conditions);
                 });
-
-                // Check for NVL tags inside this if node
-                const ifSpecialTags = [];
-                const nvlNodesInIf = ifNode.getElementsByTagName('nvl');
-                for (let i = 0; i < nvlNodesInIf.length; i++) {
-                    const nvlNode = nvlNodesInIf[i];
-
-                    // Check if this NVL is a direct child of the if node (not inside and)
-                    if (nvlNode.parentNode === ifNode) {
-                        const srcNodes = nvlNode.getElementsByTagName('src');
-                        const srcValues = [];
-
-                        for (let j = 0; j < srcNodes.length; j++) {
-                            srcValues.push(srcNodes[j].textContent);
-                        }
-
-                        ifSpecialTags.push({
-                            type: 'NVL',
-                            sources: srcValues
+            } else {
+                // Check for or blocks
+                const orNodes = ifNode.getElementsByTagName('or');
+                if (orNodes.length > 0) {
+                    // Process or nodes
+                    Array.from(orNodes).forEach(orNode => {
+                        const conditionSet = processOrNode(ifNode, orNode);
+                        mapping.conditionSets.push(conditionSet);
+                        mapping.conditions.push(...conditionSet.conditions);
+                    });
+                } else {
+                    // Check for direct conditions without and/or
+                    const condNodes = ifNode.getElementsByTagName('cond');
+                    if (condNodes.length > 0) {
+                        const conditions = [];
+                        Array.from(condNodes).forEach(condNode => {
+                            const condition = processCondNode(condNode);
+                            conditions.push(condition);
                         });
-                    }
-                }
 
-                // Check for REF tags inside this if node
-                const refNodesInIf = ifNode.getElementsByTagName('ref');
-                for (let i = 0; i < refNodesInIf.length; i++) {
-                    const refNode = refNodesInIf[i];
-                    // Only add if it's a direct child of the if node (not inside and)
-                    if (refNode.parentNode === ifNode) {
-                        ifSpecialTags.push({
-                            type: 'REF',
-                            value: refNode.textContent
+                        // Get result value (source or value tag)
+                        let resultValue = '';
+                        let outputFormat = 'VALUE';
+
+                        // Find the value or src tag outside the conditions
+                        for (let i = 0; i < ifNode.childNodes.length; i++) {
+                            const node = ifNode.childNodes[i];
+                            if (node.nodeType === 1) { // Element node
+                                if (node.tagName === 'value') {
+                                    resultValue = node.textContent;
+                                    outputFormat = 'VALUE';
+                                    break;
+                                } else if (node.tagName === 'src') {
+                                    resultValue = node.textContent;
+                                    outputFormat = 'SOURCE';
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Extract special tags for this if block
+                        const ifSpecialTags = extractSpecialTags(ifNode);
+
+                        // Add to condition sets (new format)
+                        mapping.conditionSets.push({
+                            conditions: conditions,
+                            value: resultValue,
+                            outputFormat: outputFormat,
+                            specialTags: ifSpecialTags
                         });
+
+                        mapping.conditions.push(...conditions);
                     }
                 }
-                // Determine the output format for this condition set
-                // IMPORTANT: Look for the result value in the <if> tag directly (not inside <and>)
-                let outputFormat = 'VALUE'; // Default to VALUE if <value> tag is found
-                let resultValue = '';
+            }
+        });
 
-                // We need to find the <value> or <src> tag that is a direct child of <if>
-                // and NOT inside the <and> block
-                for (let i = 0; i < ifNode.childNodes.length; i++) {
-                    const node = ifNode.childNodes[i];
-                    if (node.nodeType === 1) { // Element node
-                        if (node.tagName === 'value' && node !== andNode) {
-                            resultValue = node.textContent;
-                            outputFormat = 'VALUE';
-                            break;
-                        } else if (node.tagName === 'src' && node !== andNode) {
-                            resultValue = node.textContent;
-                            outputFormat = 'SOURCE';
-                            break;
-                        }
-                    }
-                }
+        // Process else-if nodes with similar logic
+        elseIfNodes.forEach(elseIfNode => {
+            const andNodes = elseIfNode.getElementsByTagName('and');
+            if (andNodes.length > 0) {
+                Array.from(andNodes).forEach(andNode => {
+                    const conditionSet = processConditionSet(elseIfNode, andNode);
+                    conditionSet.isElseIf = true; // Mark as else-if for correct XML generation
+                    mapping.conditionSets.push(conditionSet);
+                    mapping.conditions.push(...conditionSet.conditions);
+                });
+            } else {
+                // Similar logic for other else-if patterns if needed
+                const condNodes = elseIfNode.getElementsByTagName('cond');
+                if (condNodes.length > 0) {
+                    const conditions = [];
+                    Array.from(condNodes).forEach(condNode => {
+                        const condition = processCondNode(condNode);
+                        conditions.push(condition);
+                    });
 
-                // If we couldn't find a direct child, try getElementsByTagName but exclude those in <and>
-                if (!resultValue) {
-                    const valueNodes = ifNode.getElementsByTagName('value');
-                    const srcNodes = ifNode.getElementsByTagName('src');
+                    // Get result value
+                    let resultValue = '';
+                    let outputFormat = 'VALUE';
 
-                    // Filter out nodes that are inside the <and> block
-                    for (let i = 0; i < valueNodes.length; i++) {
-                        const node = valueNodes[i];
-                        if (!andNode.contains(node) && node.parentNode === ifNode) {
-                            resultValue = node.textContent;
-                            outputFormat = 'VALUE';
-                            break;
-                        }
-                    }
-
-                    if (!resultValue) {
-                        for (let i = 0; i < srcNodes.length; i++) {
-                            const node = srcNodes[i];
-                            if (!andNode.contains(node) && node.parentNode === ifNode) {
+                    for (let i = 0; i < elseIfNode.childNodes.length; i++) {
+                        const node = elseIfNode.childNodes[i];
+                        if (node.nodeType === 1) { // Element node
+                            if (node.tagName === 'value') {
+                                resultValue = node.textContent;
+                                outputFormat = 'VALUE';
+                                break;
+                            } else if (node.tagName === 'src') {
                                 resultValue = node.textContent;
                                 outputFormat = 'SOURCE';
                                 break;
                             }
                         }
                     }
-                }
 
-                // Add to conditions array (for backward compatibility)
-                mapping.conditions = [...mapping.conditions, ...conditions];
-
-                // Add to condition sets (new format)
+                    // Add to condition sets
                     mapping.conditionSets.push({
-                    conditions: conditions,
-                    value: resultValue,
-                    outputFormat: outputFormat,
-                    specialTags: ifSpecialTags
-                });
+                        conditions: conditions,
+                        value: resultValue,
+                        outputFormat: outputFormat,
+                        isElseIf: true,
+                        specialTags: extractSpecialTags(elseIfNode)
+                    });
 
-                console.log(`Added condition set with ${conditions.length} conditions, ${ifSpecialTags.length} special tags`);
+                    mapping.conditions.push(...conditions);
+                }
             }
-        });
-
-        // Process else-if nodes with similar logic...
-        elseIfNodes.forEach(elseIfNode => {
-            // Similar logic as above for if nodes
-            // This would be expanded with the same approach as for if nodes
         });
 
         // Process else node
         if (elseNodes.length > 0) {
-            // Similar logic as above for if nodes
-            // This would be expanded with the same approach as for if nodes
+            elseNodes.forEach(elseNode => {
+                let resultValue = '';
+                let outputFormat = 'VALUE';
+
+                // Check for src or value tags in else block
+                const srcNodes = elseNode.getElementsByTagName('src');
+                const valueNodes = elseNode.getElementsByTagName('value');
+
+                if (srcNodes.length > 0) {
+                    resultValue = srcNodes[0].textContent;
+                    outputFormat = 'SOURCE';
+                } else if (valueNodes.length > 0) {
+                    resultValue = valueNodes[0].textContent;
+                    outputFormat = 'VALUE';
+                }
+
+                // Add as condition set with empty conditions to indicate else
+                mapping.conditionSets.push({
+                    conditions: [],
+                    value: resultValue,
+                    outputFormat: outputFormat,
+                    isElse: true,
+                    specialTags: extractSpecialTags(elseNode)
+                });
+            });
         }
     }
 
@@ -539,51 +766,545 @@ function extractDerivedMapping(fieldNode) {
                 outputFormat: 'VALUE', // Default to VALUE format instead of SOURCE
                 specialTags: []
             }],
-            specialTags: []
+            specialTags: [],
+            directSrc: mapping.directSrc
         };
     }
 
-    return mapping;
+    return debugDerivedMapping(fieldNode, mapping);
 }
 
-
-// Extract MAPPED mapping data
+// Extract MAPPED mapping data - UPDATED
 function extractMappedValues(fieldNode) {
     console.log("Extracting mapped values");
     const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
     if (!ctableNode) return null;
 
     const result = {
-        src: '',
+        src: [],
         mappings: []
     };
 
+    // Extract all source columns
     const colsNode = ctableNode.getElementsByTagName('cols')[0];
     if (colsNode) {
-        const srcNode = colsNode.getElementsByTagName('src')[0];
-        if (srcNode) {
-            result.src = srcNode.textContent;
+        const srcNodes = colsNode.getElementsByTagName('src');
+        if (srcNodes.length > 1) {
+            // Multiple source columns
+            result.src = Array.from(srcNodes).map(node => node.textContent);
+        } else if (srcNodes.length === 1) {
+            // Single source column (traditional format)
+            result.src = srcNodes[0].textContent;
         }
     }
 
+    // Extract all rows
     const rowNodes = ctableNode.getElementsByTagName('row');
-    result.mappings = Array.from(rowNodes)
-        .map(row => {
-            const values = row.getElementsByTagName('value');
-            if (values.length >= 2) {
-                return {
-                    from: values[0].textContent,
-                    to: values[1].textContent
-                };
-            }
-            return null;
-        })
-        .filter(mapping => mapping !== null);
+
+    if (Array.isArray(result.src)) {
+        // Multi-column format
+        result.mappings = Array.from(rowNodes).map(row => {
+            const valueNodes = row.getElementsByTagName('value');
+            const values = Array.from(valueNodes).map(node => node.textContent);
+
+            const mapping = {};
+            result.src.forEach((src, idx) => {
+                mapping[src] = values[idx] || '';
+            });
+            return mapping;
+        });
+    } else {
+        // Traditional 2-column format
+        result.mappings = Array.from(rowNodes)
+            .map(row => {
+                const values = row.getElementsByTagName('value');
+                if (values.length >= 2) {
+                    return {
+                        from: values[0].textContent,
+                        to: values.length > 2 ?
+                            Array.from(values).slice(1).map(v => v.textContent) :
+                            values[1].textContent
+                    };
+                }
+                return null;
+            })
+            .filter(mapping => mapping !== null);
+    }
 
     return result;
 }
+
+// Generate XML for derived mapping - UPDATED
+function generateDerivedXml(derivedMapping) {
+    if (!derivedMapping) return '';
+
+    let xml = '';
+
+    // Handle direct src tag
+    if (derivedMapping.directSrc) {
+        xml += `    <src>${escapeXml(derivedMapping.directSrc)}</src>\n`;
+        return xml;
+    }
+
+    // Handle ctable structure
+    if (derivedMapping.ctableData) {
+        return generateMappedXml(derivedMapping.ctableData);
+    }
+
+    // Handle special tags (NVL/REF) that are standalone (not in ifelse)
+    if (derivedMapping.specialTags && derivedMapping.specialTags.length > 0 &&
+        !derivedMapping.conditionSets.some(set => set.conditions.length > 0)) {
+        derivedMapping.specialTags.forEach(tag => {
+            if (tag.type === 'NVL') {
+                xml += '    <nvl>\n';
+                tag.sources.forEach(src => {
+                    xml += `      <src>${escapeXml(src)}</src>\n`;
+                });
+                xml += '    </nvl>\n';
+            } else if (tag.type === 'REF') {
+                xml += `    <ref>${escapeXml(tag.value)}</ref>\n`;
+            }
+        });
+
+        return xml;
+    }
+
+    // If we have multiple condition sets, use the ifelse format
+    if (derivedMapping.conditionSets && derivedMapping.conditionSets.length > 0) {
+        // Check if we're using a complex structure
+        const hasOr = derivedMapping.conditionSets.some(set => set.orStructure);
+        const hasElseIf = derivedMapping.conditionSets.some(set => set.isElseIf);
+        const hasElse = derivedMapping.conditionSets.some(set => set.isElse);
+
+        xml += '    <ifelse>\n';
+
+        // Do we have a complex OR structure?
+        if (hasOr) {
+            const orSet = derivedMapping.conditionSets.find(set => set.orStructure);
+            if (orSet) {
+                xml += '      <if>\n';
+
+                // Add OR block
+                xml += '        <or>\n';
+
+                // Process each part in OR structure
+                if (orSet.orConditions) {
+                    orSet.orConditions.forEach(orCond => {
+                        if (orCond.type === 'AND') {
+                            xml += '          <and>\n';
+
+                            // Add ref tags if any
+                            if (orCond.refTags && orCond.refTags.length > 0) {
+                                orCond.refTags.forEach(ref => {
+                                    xml += `            <ref>${escapeXml(ref.value)}</ref>\n`;
+                                });
+                            }
+
+                            // Add conditions
+                            if (orCond.conditions && orCond.conditions.length > 0) {
+                                orCond.conditions.forEach(condition => {
+                                    xml += '            <cond>\n';
+                                    xml += `              <src>${escapeXml(condition.src)}</src>\n`;
+                                    xml += `              <oper>${escapeXml(condition.oper)}</oper>\n`;
+                                    xml += `              <value>${escapeXml(condition.value)}</value>\n`;
+
+                                    // Add additional values
+                                    if (condition.additionalValues && condition.additionalValues.length > 0) {
+                                        condition.additionalValues.forEach(val => {
+                                            if (val && val.trim()) {
+                                                xml += `              <value>${escapeXml(val)}</value>\n`;
+                                            }
+                                        });
+                                    }
+
+                                    xml += '            </cond>\n';
+                                });
+                            }
+
+                            xml += '          </and>\n';
+                        } else if (orCond.type === 'NVL') {
+                            // Add NVL blocks
+                            orCond.data.forEach(nvl => {
+                                xml += '          <nvl>\n';
+                                nvl.sources.forEach(src => {
+                                    xml += `            <src>${escapeXml(src)}</src>\n`;
+                                });
+                                xml += '          </nvl>\n';
+                            });
+                        }
+                    });
+                }
+
+                xml += '        </or>\n';
+
+                // Add the result value
+                if (orSet.outputFormat === 'SOURCE') {
+                    xml += `        <src>${escapeXml(orSet.value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(orSet.value)}</value>\n`;
+                }
+
+                xml += '      </if>\n';
+
+                // Add else part if it exists
+                const elseSet = derivedMapping.conditionSets.find(set => set.isElse);
+                if (elseSet) {
+                    xml += '      <else>\n';
+                    if (elseSet.outputFormat === 'SOURCE') {
+                        xml += `        <src>${escapeXml(elseSet.value)}</src>\n`;
+                    } else {
+                        xml += `        <value>${escapeXml(elseSet.value)}</value>\n`;
+                    }
+                    xml += '      </else>\n';
+                }
+            }
+        }
+        // Do we have an if/else-if/else structure?
+        else if (hasElseIf || hasElse) {
+            // Find all if, else-if, and else sets
+            const ifSets = derivedMapping.conditionSets.filter(set => !set.isElseIf && !set.isElse);
+            const elseIfSets = derivedMapping.conditionSets.filter(set => set.isElseIf);
+            const elseSets = derivedMapping.conditionSets.filter(set => set.isElse);
+
+            // Generate if part
+            if (ifSets.length > 0) {
+                xml += '      <if>\n';
+
+                // Add special tags
+                if (ifSets[0].specialTags && ifSets[0].specialTags.length > 0) {
+                    ifSets[0].specialTags.forEach(tag => {
+                        if (tag.type === 'NVL') {
+                            xml += '        <nvl>\n';
+                            tag.sources.forEach(src => {
+                                xml += `          <src>${escapeXml(src)}</src>\n`;
+                            });
+                            xml += '        </nvl>\n';
+                        } else if (tag.type === 'REF') {
+                            xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                        }
+                    });
+                }
+
+                // Add AND block with conditions
+                if (ifSets[0].conditions && ifSets[0].conditions.length > 0) {
+                    xml += '        <and>\n';
+                    ifSets[0].conditions.forEach(condition => {
+                        xml += '          <cond>\n';
+                        xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                        xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+                        xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+                        // Add additional values
+                        if (condition.additionalValues && condition.additionalValues.length > 0) {
+                            condition.additionalValues.forEach(val => {
+                                if (val && val.trim()) {
+                                    xml += `            <value>${escapeXml(val)}</value>\n`;
+                                }
+                            });
+                        }
+
+                        xml += '          </cond>\n';
+                    });
+                    xml += '        </and>\n';
+                }
+
+                // Add result value
+                if (ifSets[0].outputFormat === 'SOURCE') {
+                    xml += `        <src>${escapeXml(ifSets[0].value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(ifSets[0].value)}</value>\n`;
+                }
+
+                xml += '      </if>\n';
+            }
+
+            // Generate else-if parts
+            elseIfSets.forEach(set => {
+                xml += '      <else-if>\n';
+
+                // Add special tags
+                if (set.specialTags && set.specialTags.length > 0) {
+                    set.specialTags.forEach(tag => {
+                        if (tag.type === 'NVL') {
+                            xml += '        <nvl>\n';
+                            tag.sources.forEach(src => {
+                                xml += `          <src>${escapeXml(src)}</src>\n`;
+                            });
+                            xml += '        </nvl>\n';
+                        } else if (tag.type === 'REF') {
+                            xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                        }
+                    });
+                }
+
+                // Add AND block with conditions
+                if (set.conditions && set.conditions.length > 0) {
+                    xml += '        <and>\n';
+                    set.conditions.forEach(condition => {
+                        xml += '          <cond>\n';
+                        xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                        xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+                        xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+                        // Add additional values
+                        if (condition.additionalValues && condition.additionalValues.length > 0) {
+                            condition.additionalValues.forEach(val => {
+                                if (val && val.trim()) {
+                                    xml += `            <value>${escapeXml(val)}</value>\n`;
+                                }
+                            });
+                        }
+
+                        xml += '          </cond>\n';
+                    });
+                    xml += '        </and>\n';
+                }
+
+                // Add result value
+                if (set.outputFormat === 'SOURCE') {
+                    xml += `        <src>${escapeXml(set.value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(set.value)}</value>\n`;
+                }
+
+                xml += '      </else-if>\n';
+            });
+
+            // Generate else part
+            if (elseSets.length > 0) {
+                xml += '      <else>\n';
+
+                // Add special tags for else
+                if (elseSets[0].specialTags && elseSets[0].specialTags.length > 0) {
+                    elseSets[0].specialTags.forEach(tag => {
+                        if (tag.type === 'NVL') {
+                            xml += '        <nvl>\n';
+                            tag.sources.forEach(src => {
+                                xml += `          <src>${escapeXml(src)}</src>\n`;
+                            });
+                            xml += '        </nvl>\n';
+                        } else if (tag.type === 'REF') {
+                            xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                        }
+                    });
+                }
+
+                if (elseSets[0].outputFormat === 'SOURCE') {
+                    xml += `        <src>${escapeXml(elseSets[0].value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(elseSets[0].value)}</value>\n`;
+                }
+                xml += '      </else>\n';
+            }
+        }
+        // Simple if structure
+        else {
+            let isFirstConditionSet = true;
+            derivedMapping.conditionSets.forEach(conditionSet => {
+                if (conditionSet.conditions.length > 0) {
+                    // Use <if> for all condition sets
+                    xml += '      <if>\n';
+
+                    // Add special tags
+                    if (conditionSet.specialTags && conditionSet.specialTags.length > 0) {
+                        conditionSet.specialTags.forEach(tag => {
+                            if (tag.type === 'NVL') {
+                                xml += '        <nvl>\n';
+                                tag.sources.forEach(src => {
+                                    xml += `          <src>${escapeXml(src)}</src>\n`;
+                                });
+                                xml += '        </nvl>\n';
+                            } else if (tag.type === 'REF') {
+                                xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                            }
+                        });
+                    }
+
+                    // Generate and block with conditions
+                    xml += '        <and>\n';
+                    conditionSet.conditions.forEach(condition => {
+                        xml += '          <cond>\n';
+                        xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                        xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+
+                        // Output primary value
+                        xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+                        // Output additional values
+                        if (condition.additionalValues && condition.additionalValues.length > 0) {
+                            condition.additionalValues.forEach(val => {
+                                if (val && val.trim()) {
+                                    xml += `            <value>${escapeXml(val)}</value>\n`;
+                                }
+                            });
+                        }
+
+                        xml += '          </cond>\n';
+                    });
+                    xml += '        </and>\n';
+
+                    // Add result using src or value tag based on output format
+                    if (conditionSet.outputFormat === 'SOURCE') {
+                        xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
+                    } else {
+                        xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
+                    }
+
+                    xml += '      </if>\n';
+                    isFirstConditionSet = false;
+                }
+            });
+
+            // Find default set for else condition
+            const defaultSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
+            if (defaultSet) {
+                xml += '      <else>\n';
+                // Add special tags for else
+                if (defaultSet.specialTags && defaultSet.specialTags.length > 0) {
+                    defaultSet.specialTags.forEach(tag => {
+                        if (tag.type === 'NVL') {
+                            xml += '        <nvl>\n';
+                            tag.sources.forEach(src => {
+                                xml += `          <src>${escapeXml(src)}</src>\n`;
+                            });
+                            xml += '        </nvl>\n';
+                        } else if (tag.type === 'REF') {
+                            xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                        }
+                    });
+                }
+
+                if (defaultSet.outputFormat === 'SOURCE') {
+                    xml += `        <src>${escapeXml(defaultSet.value)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(defaultSet.value)}</value>\n`;
+                }
+                xml += '      </else>\n';
+            }
+        }
+
+        xml += '    </ifelse>\n';
+    }
+    // Fallback to a simpler format if needed
+    else if (derivedMapping.conditions && derivedMapping.conditions.length > 0) {
+        // Default to VALUE format unless explicitly set otherwise
+        const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
+
+        xml += '    <ifelse>\n';
+        xml += '      <if>\n';
+
+        // Add any special tags (NVL/REF) if they exist
+        if (derivedMapping.specialTags && derivedMapping.specialTags.length > 0) {
+            derivedMapping.specialTags.forEach(tag => {
+                if (tag.type === 'NVL') {
+                    xml += '        <nvl>\n';
+                    tag.sources.forEach(src => {
+                        xml += `          <src>${escapeXml(src)}</src>\n`;
+                    });
+                    xml += '        </nvl>\n';
+                } else if (tag.type === 'REF') {
+                    xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
+                }
+            });
+        }
+
+        xml += '        <and>\n';
+
+        // Generate condition nodes
+        derivedMapping.conditions.forEach(condition => {
+            xml += '          <cond>\n';
+            xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+            xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
+            xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+            // Output any additional values
+            if (condition.additionalValues && condition.additionalValues.length > 0) {
+                condition.additionalValues.forEach(val => {
+                    if (val && val.trim()) {
+                        xml += `            <value>${escapeXml(val)}</value>\n`;
+                    }
+                });
+            }
+
+            xml += '          </cond>\n';
+        });
+
+        xml += '        </and>\n';
+
+        // Use appropriate tag based on output format
+        if (isSourceFormat) {
+            xml += `        <src>${escapeXml(derivedMapping.value)}</src>\n`;
+        } else {
+            xml += `        <value>${escapeXml(derivedMapping.value)}</value>\n`;
+        }
+
+        xml += '      </if>\n';
+
+        // Add default with appropriate tag
+        if (isSourceFormat) {
+            xml += `      <src>${escapeXml(derivedMapping.value)}</src>\n`;
+        } else {
+            xml += `      <value>${escapeXml(derivedMapping.value)}</value>\n`;
+        }
+
+        xml += '    </ifelse>\n';
+    }
+
+    return xml;
+}
+
+// Generate XML for mapped values - UPDATED
+function generateMappedXml(mappedValues) {
+    if (!mappedValues) return '';
+
+    let xml = '    <ctable>\n';
+
+    // Generate cols section
+    xml += '      <cols>\n';
+    if (Array.isArray(mappedValues.src)) {
+        // Multiple source columns
+        mappedValues.src.forEach(src => {
+            xml += `        <src>${escapeXml(src)}</src>\n`;
+        });
+    } else {
+        // Single source column
+        xml += `        <src>${escapeXml(mappedValues.src)}</src>\n`;
+    }
+    xml += '      </cols>\n';
+
+    // Generate rows
+    mappedValues.mappings.forEach(mapping => {
+        xml += '      <row>\n';
+
+        if (Array.isArray(mappedValues.src) && mappedValues.src.length > 1) {
+            // Multiple columns format
+            mappedValues.src.forEach(src => {
+                const value = mapping[src] || '';
+                xml += `        <value>${escapeXml(value)}</value>\n`;
+            });
+        } else {
+            // Standard two-column format
+            xml += `        <value>${escapeXml(mapping.from)}</value>\n`;
+
+            if (Array.isArray(mapping.to)) {
+                // Multiple to values
+                mapping.to.forEach(toValue => {
+                    xml += `        <value>${escapeXml(toValue)}</value>\n`;
+                });
+            } else {
+                // Single to value
+                xml += `        <value>${escapeXml(mapping.to)}</value>\n`;
+            }
+        }
+
+        xml += '      </row>\n';
+    });
+
+    xml += '    </ctable>\n';
+    return xml;
+}
+
 // Parse and display mapping
-// Parse and display mapping with improved NVL handling
 function parseAndDisplayMapping(xmlString) {
     try {
         console.log("Parsing XML string - length:", xmlString.length);
@@ -852,6 +1573,7 @@ function debugLogFieldStructure(fieldNode) {
 
     console.log("---------------------------");
 }
+
 // Generate XML for saving
 function generateXml(mappingsToUse) {
     console.log("Generating XML");
@@ -928,7 +1650,6 @@ function extractComments(xmlString) {
 }
 
 // Generate XML for a single mapping
-// Generate XML for a single mapping
 function generateMappingXml(mapping) {
     let xml = '  <field>\n';
 
@@ -986,336 +1707,6 @@ function generateMappingXml(mapping) {
     }
 
     xml += '  </field>\n';
-    return xml;
-}
-
-
-// Generate XML for derived mapping
-function generateDerivedXml(derivedMapping) {
-    if (!derivedMapping) return '';
-
-    let xml = '';
-
-    // Handle special tags (NVL/REF) that are standalone (not in ifelse)
-    if (derivedMapping.specialTags && derivedMapping.specialTags.length > 0 && !derivedMapping.conditionSets.some(set => set.conditions.length > 0)) {
-        derivedMapping.specialTags.forEach(tag => {
-            if (tag.type === 'NVL') {
-                xml += '    <nvl>\n';
-                tag.sources.forEach(src => {
-                    xml += `      <src>${escapeXml(src)}</src>\n`;
-                });
-                xml += '    </nvl>\n';
-            } else if (tag.type === 'REF') {
-                xml += `    <ref>${escapeXml(tag.value)}</ref>\n`;
-            }
-        });
-
-        return xml;
-    }
-
-    // If we have multiple condition sets, use the ifelse format
-    if (derivedMapping.conditionSets && derivedMapping.conditionSets.length > 0) {
-        // Check if we're using the if/else structure or ifelse structure
-        const hasIfElseIf = derivedMapping.conditionSets.some(set =>
-            set.conditions.length > 0 && set.conditions.some(cond => cond.src.includes('.')));
-
-        if (!hasIfElseIf) {
-            xml += '    <ifelse>\n';
-
-            // Generate if nodes for each condition set
-            let isFirstConditionSet = true;
-        derivedMapping.conditionSets.forEach(conditionSet => {
-            if (conditionSet.conditions.length > 0) {
-                    // Use <if> for the first condition set, <else-if> for the rest
-                    if (isFirstConditionSet) {
-                        xml += '      <if>\n';
-                        isFirstConditionSet = false;
-                    } else {
-                        xml += '      <else-if>\n';
-                    }
-
-                    // Add NVL tags if they exist for this condition set
-                    if (conditionSet.specialTags && conditionSet.specialTags.some(tag => tag.type === 'NVL')) {
-                        const nvlTags = conditionSet.specialTags.filter(tag => tag.type === 'NVL');
-                        nvlTags.forEach(nvlTag => {
-                            xml += '        <nvl>\n';
-                            nvlTag.sources.forEach(src => {
-                                xml += `          <src>${escapeXml(src)}</src>\n`;
-                            });
-                            xml += '        </nvl>\n';
-                        });
-                    }
-
-                    // Add REF tags if they exist for this condition set
-                    if (conditionSet.specialTags && conditionSet.specialTags.some(tag => tag.type === 'REF')) {
-                        const refTags = conditionSet.specialTags.filter(tag => tag.type === 'REF');
-                        refTags.forEach(refTag => {
-                            xml += `        <ref>${escapeXml(refTag.value)}</ref>\n`;
-                        });
-                    }
-
-                    xml += '        <and>\n';
-
-                    // Generate condition nodes
-                conditionSet.conditions.forEach(condition => {
-                    xml += '          <cond>\n';
-                    xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-                    xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
-
-                    // Output the primary value
-                    xml += `            <value>${escapeXml(condition.value)}</value>\n`;
-
-                    // Output any additional values
-                    if (condition.additionalValues && condition.additionalValues.length > 0) {
-                        condition.additionalValues.forEach(val => {
-                            xml += `            <value>${escapeXml(val)}</value>\n`;
-                        });
-                    }
-
-                    xml += '          </cond>\n';
-                });
-
-                xml += '        </and>\n';
-
-                    // Add the result using either <src> or <value> tag based on the outputFormat
-                    const isSourceFormat = conditionSet.outputFormat === 'SOURCE';
-                    if (isSourceFormat) {
-                        // When using source format, use <src> tag
-                        xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
-                    } else {
-                        // When using value format, use <value> tag (this is the format in your examples)
-                        xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
-                    }
-
-                    // Use correct closing tag based on whether this is an if or else-if
-                    if (isFirstConditionSet) {
-                        xml += '      </if>\n';
-                    } else {
-                        xml += '      </else-if>\n';
-                    }
-                }
-            });
-
-            // Find a default condition set (without conditions) to use for the default value
-            const defaultSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
-
-            // If no explicit default set, use the format from the first condition set
-            const formatReference = defaultSet || derivedMapping.conditionSets[0] || { outputFormat: 'VALUE' };
-            const isSourceFormat = formatReference.outputFormat === 'SOURCE';
-            const defaultValue = defaultSet?.value || derivedMapping.value || '';
-
-            // Add default value with the appropriate tag
-            if (defaultSet) {
-                xml += '      <else>\n';
-                if (isSourceFormat) {
-                    xml += `        <src>${escapeXml(defaultValue)}</src>\n`;
-                } else {
-                    xml += `        <value>${escapeXml(defaultValue)}</value>\n`;
-                }
-                xml += '      </else>\n';
-            } else {
-                // Just add a default value at the ifelse level if no else condition
-                if (isSourceFormat) {
-                    xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
-                } else {
-                    xml += `      <value>${escapeXml(defaultValue)}</value>\n`;
-                }
-            }
-
-            xml += '    </ifelse>\n';
-        } else {
-            // Complex if/else-if/else structure
-            xml += '    <ifelse>\n';
-
-            // First handle all condition sets with conditions (if and else-if)
-            let isFirstIf = true;
-            derivedMapping.conditionSets.forEach(conditionSet => {
-                if (conditionSet.conditions.length > 0) {
-                    // First condition set uses <if>, others use <else-if>
-                    const nodeType = isFirstIf ? 'if' : 'else-if';
-                    xml += `      <${nodeType}>\n`;
-
-                    // Add NVL tags if they exist for this condition set
-                    if (conditionSet.specialTags && conditionSet.specialTags.some(tag => tag.type === 'NVL')) {
-                        const nvlTags = conditionSet.specialTags.filter(tag => tag.type === 'NVL');
-                        nvlTags.forEach(nvlTag => {
-                            xml += '        <nvl>\n';
-                            nvlTag.sources.forEach(src => {
-                                xml += `          <src>${escapeXml(src)}</src>\n`;
-                            });
-                            xml += '        </nvl>\n';
-                        });
-                    }
-
-                    // Add REF tags if they exist for this condition set
-                    if (conditionSet.specialTags && conditionSet.specialTags.some(tag => tag.type === 'REF')) {
-                        const refTags = conditionSet.specialTags.filter(tag => tag.type === 'REF');
-                        refTags.forEach(refTag => {
-                            xml += `        <ref>${escapeXml(refTag.value)}</ref>\n`;
-                        });
-                    }
-
-                    // Check if there are ref tags to use
-                    const hasRef = conditionSet.conditions.some(cond => cond.src.includes('Ref'));
-
-                    if (hasRef) {
-                        const refValue = conditionSet.conditions[0]?.value || '';
-                        xml += `        <ref>${escapeXml(refValue)}</ref>\n`;
-
-                        // Add conditions if we have them
-                        if (conditionSet.conditions.length > 0) {
-                            xml += '        <and>\n';
-                            conditionSet.conditions.forEach(condition => {
-                                xml += '          <cond>\n';
-                                xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-                                xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
-
-                                // For complex conditions with source fields
-                                if (condition.src !== condition.value && condition.value) {
-                                    xml += `            <value>${escapeXml(condition.value)}</value>\n`;
-                                } else if (condition.src === condition.value) {
-                                    xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-                                }else  if (condition.additionalValues && condition.additionalValues.length > 0) {
-                                    condition.additionalValues.forEach(val => {
-                                        xml += `            <value>${escapeXml(val)}</value>\n`;
-                                    });
-                                }
-
-                                xml += '          </cond>\n';
-                            });
-                            xml += '        </and>\n';
-                        }
-                    } else {
-                        xml += '        <and>\n';
-                        conditionSet.conditions.forEach(condition => {
-                            xml += '          <cond>\n';
-                            xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-                            xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
-                            xml += `            <value>${escapeXml(condition.value)}</value>\n`;
-                              if (condition.additionalValues && condition.additionalValues.length > 0) {
-        condition.additionalValues.forEach(val => {
-            xml += `            <value>${escapeXml(val)}</value>\n`;
-        });
-    }
-                            xml += '          </cond>\n';
-                        });
-                        xml += '        </and>\n';
-                    }
-
-                    // Add the result with the appropriate tag based on this condition set's format
-                    const isSourceFormat = conditionSet.outputFormat === 'SOURCE';
-                    if (isSourceFormat) {
-                        xml += `        <src>${escapeXml(conditionSet.value)}</src>\n`;
-                    } else {
-                        xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
-                    }
-
-                    // Close the if or else-if tag with the correct tag name
-                    xml += `      </${nodeType}>\n`;
-
-                    if (isFirstIf) {
-                        isFirstIf = false;
-                    }
-                }
-            });
-
-            // Handle the default case (else)
-            const elseSet = derivedMapping.conditionSets.find(set => set.conditions.length === 0);
-            if (elseSet) {
-                xml += '      <else>\n';
-                const isSourceFormat = elseSet.outputFormat === 'SOURCE';
-                if (isSourceFormat) {
-                    xml += `        <src>${escapeXml(elseSet.value)}</src>\n`;
-                } else {
-                    xml += `        <value>${escapeXml(elseSet.value)}</value>\n`;
-                }
-                xml += '      </else>\n';
-            }
-
-            xml += '    </ifelse>\n';
-        }
-    }
-    // Fallback to the old format
-    else if (derivedMapping.conditions && derivedMapping.conditions.length > 0) {
-        // Default to VALUE format unless explicitly set otherwise
-        const isSourceFormat = derivedMapping.outputFormat === 'SOURCE';
-
-        xml += '    <ifelse>\n';
-        xml += '      <if>\n';
-
-        // Add any special tags (NVL/REF) if they exist
-        if (derivedMapping.specialTags && derivedMapping.specialTags.length > 0) {
-            derivedMapping.specialTags.forEach(tag => {
-                if (tag.type === 'NVL') {
-                    xml += '        <nvl>\n';
-                    tag.sources.forEach(src => {
-                        xml += `          <src>${escapeXml(src)}</src>\n`;
-                    });
-                    xml += '        </nvl>\n';
-                } else if (tag.type === 'REF') {
-                    xml += `        <ref>${escapeXml(tag.value)}</ref>\n`;
-                }
-            });
-        }
-
-        xml += '        <and>\n';
-
-        // Generate condition nodes
-        derivedMapping.conditions.forEach(condition => {
-            xml += '          <cond>\n';
-            xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-            xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
-            xml += `            <value>${escapeXml(condition.value)}</value>\n`;
-
-            // Output any additional values
-            if (condition.additionalValues && condition.additionalValues.length > 0) {
-                condition.additionalValues.forEach(val => {
-                    xml += `            <value>${escapeXml(val)}</value>\n`;
-                });
-            }
-
-            xml += '          </cond>\n';
-        });
-
-        xml += '        </and>\n';
-
-        // Use appropriate tag based on output format
-        if (isSourceFormat) {
-            xml += `        <src>${escapeXml(derivedMapping.value)}</src>\n`;
-        } else {
-            xml += `        <value>${escapeXml(derivedMapping.value)}</value>\n`;
-        }
-
-        xml += '      </if>\n';
-
-        // Add default with appropriate tag
-        if (isSourceFormat) {
-            xml += `      <src>${escapeXml(derivedMapping.value)}</src>\n`;
-        } else {
-            xml += `      <value>${escapeXml(derivedMapping.value)}</value>\n`;
-        }
-
-        xml += '    </ifelse>\n';
-    }
-
-    return xml;
-}
-
-// Generate XML for mapped values
-function generateMappedXml(mappedValues) {
-    if (!mappedValues) return '';
-
-    let xml = '    <ctable>\n';
-    xml += '      <cols>\n';
-    xml += `        <src>${escapeXml(mappedValues.src)}</src>\n`;
-    xml += '      </cols>\n';
-    mappedValues.mappings.forEach(mapping => {
-        xml += '      <row>\n';
-        xml += `        <value>${escapeXml(mapping.from)}</value>\n`;
-        xml += `        <value>${escapeXml(mapping.to)}</value>\n`;
-        xml += '      </row>\n';
-    });
-    xml += '    </ctable>\n';
     return xml;
 }
 
@@ -1399,6 +1790,7 @@ function showMappedDialog(mapping, index) {
         dialogRoot
     );
 }
+
 // Show derived mapping dialog
 function showDerivedMappingDialog(mapping, index) {
     console.log("Opening derived dialog for index:", index);
@@ -1502,7 +1894,7 @@ function processSaveWithPreference(preference) {
     }
 }
 
-// Download XML file - keeping your original function
+// Download XML file
 function downloadXmlFile(xmlContent) {
     console.log("Downloading XML file");
     const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' });
