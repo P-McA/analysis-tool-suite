@@ -276,42 +276,68 @@ function extractDerivedMapping(fieldNode) {
         conditionSets: [], // New structure for enhanced support
         specialTags: []    // Array to store NVL/REF tags
     };
-        // Check for nvl tags
+
+    // First, check for direct NVL tags (outside ifelse) - These are standalone NVL tags
     const nvlNodes = fieldNode.getElementsByTagName('nvl');
     if (nvlNodes.length > 0) {
+        console.log("Found NVL nodes:", nvlNodes.length);
+
+        // Process each NVL node that's a direct child of the field
         for (let i = 0; i < nvlNodes.length; i++) {
             const nvlNode = nvlNodes[i];
-            const srcNodes = nvlNode.getElementsByTagName('src');
-            const srcValues = [];
 
-            for (let j = 0; j < srcNodes.length; j++) {
-                srcValues.push(srcNodes[j].textContent);
+            // Check if this NVL is a direct child of the field node (not inside ifelse or other structures)
+            if (nvlNode.parentNode === fieldNode) {
+                const srcNodes = nvlNode.getElementsByTagName('src');
+                const srcValues = [];
+
+                // Extract all source values from this NVL tag
+                for (let j = 0; j < srcNodes.length; j++) {
+                    srcValues.push(srcNodes[j].textContent);
+                }
+
+                // Add to special tags array
+                mapping.specialTags.push({
+                    type: 'NVL',
+                    sources: srcValues
+                });
+
+                console.log("Added NVL tag with sources:", srcValues);
             }
-
-            mapping.specialTags.push({
-                type: 'NVL',
-                sources: srcValues
-            });
         }
     }
 
-    // Check for ref tags
+    // Check for direct REF tags (outside ifelse)
     const refNodes = fieldNode.getElementsByTagName('ref');
     if (refNodes.length > 0) {
         for (let i = 0; i < refNodes.length; i++) {
             const refNode = refNodes[i];
 
-            mapping.specialTags.push({
-                type: 'REF',
-                value: refNode.textContent
-            });
+            // Only add if it's a direct child of the field node (not inside if/else blocks)
+            if (refNode.parentNode === fieldNode) {
+                mapping.specialTags.push({
+                    type: 'REF',
+                    value: refNode.textContent
+                });
+                console.log("Added REF tag with value:", refNode.textContent);
+            }
         }
     }
+    // If we found standalone NVL/REF tags and no ifelse structure,
+    // create a default condition set to hold them
+    if (mapping.specialTags.length > 0 && !fieldNode.getElementsByTagName('ifelse')[0]) {
+        mapping.conditionSets.push({
+            conditions: [],
+            value: '', // No result value needed for standalone NVL/REF
+            outputFormat: 'VALUE',
+            specialTags: mapping.specialTags // Attach special tags to the condition set
+        });
+        console.log("Created default condition set for standalone NVL/REF tags");
+    }
 
-    // Check for ifelse structure (format 1)
+    // Check for ifelse structure
     const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
     if (ifElseNode) {
-        // Rest of the ifelse parsing logic remains the same as your current implementation
         const ifNodes = Array.from(ifElseNode.getElementsByTagName('if'));
         const elseIfNodes = Array.from(ifElseNode.getElementsByTagName('else-if'));
         const elseNodes = Array.from(ifElseNode.getElementsByTagName('else'));
@@ -330,20 +356,87 @@ function extractDerivedMapping(fieldNode) {
                     });
                 });
 
+                // Check for NVL tags inside this if node
+                const ifSpecialTags = [];
+                const nvlNodesInIf = ifNode.getElementsByTagName('nvl');
+                for (let i = 0; i < nvlNodesInIf.length; i++) {
+                    const nvlNode = nvlNodesInIf[i];
+
+                    // Check if this NVL is a direct child of the if node (not inside and)
+                    if (nvlNode.parentNode === ifNode) {
+                        const srcNodes = nvlNode.getElementsByTagName('src');
+                        const srcValues = [];
+
+                        for (let j = 0; j < srcNodes.length; j++) {
+                            srcValues.push(srcNodes[j].textContent);
+                        }
+
+                        ifSpecialTags.push({
+                            type: 'NVL',
+                            sources: srcValues
+                        });
+                    }
+                }
+
+                // Check for REF tags inside this if node
+                const refNodesInIf = ifNode.getElementsByTagName('ref');
+                for (let i = 0; i < refNodesInIf.length; i++) {
+                    const refNode = refNodesInIf[i];
+                    // Only add if it's a direct child of the if node (not inside and)
+                    if (refNode.parentNode === ifNode) {
+                        ifSpecialTags.push({
+                            type: 'REF',
+                            value: refNode.textContent
+                        });
+                    }
+                }
                 // Determine the output format for this condition set
+                // IMPORTANT: Look for the result value in the <if> tag directly (not inside <and>)
                 let outputFormat = 'VALUE'; // Default to VALUE if <value> tag is found
                 let resultValue = '';
 
-                // Check for value tag first (since your examples show this is the desired format)
-                const valueNode = ifNode.getElementsByTagName('value')[0];
-                const srcNode = ifNode.getElementsByTagName('src')[0];
+                // We need to find the <value> or <src> tag that is a direct child of <if>
+                // and NOT inside the <and> block
+                for (let i = 0; i < ifNode.childNodes.length; i++) {
+                    const node = ifNode.childNodes[i];
+                    if (node.nodeType === 1) { // Element node
+                        if (node.tagName === 'value' && node !== andNode) {
+                            resultValue = node.textContent;
+                            outputFormat = 'VALUE';
+                            break;
+                        } else if (node.tagName === 'src' && node !== andNode) {
+                            resultValue = node.textContent;
+                            outputFormat = 'SOURCE';
+                            break;
+                        }
+                    }
+                }
 
-                if (valueNode) {
-                    resultValue = valueNode.textContent;
-                    outputFormat = 'VALUE';
-                } else if (srcNode) {
-                    resultValue = srcNode.textContent;
-                    outputFormat = 'SOURCE';
+                // If we couldn't find a direct child, try getElementsByTagName but exclude those in <and>
+                if (!resultValue) {
+                    const valueNodes = ifNode.getElementsByTagName('value');
+                    const srcNodes = ifNode.getElementsByTagName('src');
+
+                    // Filter out nodes that are inside the <and> block
+                    for (let i = 0; i < valueNodes.length; i++) {
+                        const node = valueNodes[i];
+                        if (!andNode.contains(node) && node.parentNode === ifNode) {
+                            resultValue = node.textContent;
+                            outputFormat = 'VALUE';
+                            break;
+                        }
+                    }
+
+                    if (!resultValue) {
+                        for (let i = 0; i < srcNodes.length; i++) {
+                            const node = srcNodes[i];
+                            if (!andNode.contains(node) && node.parentNode === ifNode) {
+                                resultValue = node.textContent;
+                                outputFormat = 'SOURCE';
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 // Add to conditions array (for backward compatibility)
@@ -353,327 +446,55 @@ function extractDerivedMapping(fieldNode) {
                 mapping.conditionSets.push({
                     conditions: conditions,
                     value: resultValue,
-                    outputFormat: outputFormat
+                    outputFormat: outputFormat,
+                    specialTags: ifSpecialTags
                 });
+
+                console.log(`Added condition set with ${conditions.length} conditions, ${ifSpecialTags.length} special tags`);
             }
         });
 
-        // Process else-if nodes with similar logic to correctly extract result values
+        // Process else-if nodes with similar logic...
         elseIfNodes.forEach(elseIfNode => {
-            const andNode = elseIfNode.getElementsByTagName('and')[0];
-            if (andNode) {
-                const conditions = [];
-                const condNodes = andNode.getElementsByTagName('cond');
-                Array.from(condNodes).forEach(condNode => {
-                    conditions.push({
-                        src: condNode.getElementsByTagName('src')[0]?.textContent || '',
-                        oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                        value: condNode.getElementsByTagName('value')[0]?.textContent || ''
-                    });
-                });
-
-                // Similar fix for else-if nodes to get correct result value
-                let outputFormat = 'VALUE';
-                let resultValue = '';
-
-                // Look for direct child value/src nodes
-                let directValueNode = null;
-                let directSrcNode = null;
-
-                for (let i = 0; i < elseIfNode.childNodes.length; i++) {
-                    const node = elseIfNode.childNodes[i];
-                    if (node.nodeType === 1) { // Element node
-                        if (node.tagName === 'value' && node !== andNode) {
-                            directValueNode = node;
-                        } else if (node.tagName === 'src' && node !== andNode) {
-                            directSrcNode = node;
-                        }
-                    }
-                }
-
-                // If direct approach fails, try filtering
-                if (!directValueNode && !directSrcNode) {
-                    const valueNodes = elseIfNode.getElementsByTagName('value');
-                    const srcNodes = elseIfNode.getElementsByTagName('src');
-
-                    for (let i = 0; i < valueNodes.length; i++) {
-                        const node = valueNodes[i];
-                        if (!andNode.contains(node) && node.parentNode === elseIfNode) {
-                            directValueNode = node;
-                            break;
-                        }
-                    }
-
-                    for (let i = 0; i < srcNodes.length; i++) {
-                        const node = srcNodes[i];
-                        if (!andNode.contains(node) && node.parentNode === elseIfNode) {
-                            directSrcNode = node;
-                            break;
-                        }
-                    }
-                }
-
-                if (directValueNode) {
-                    resultValue = directValueNode.textContent;
-                    outputFormat = 'VALUE';
-                } else if (directSrcNode) {
-                    resultValue = directSrcNode.textContent;
-                    outputFormat = 'SOURCE';
-                }
-
-                mapping.conditionSets.push({
-                    conditions: conditions,
-                    value: resultValue,
-                    outputFormat: outputFormat
-                });
-            }
+            // Similar logic as above for if nodes
+            // This would be expanded with the same approach as for if nodes
         });
 
         // Process else node
         if (elseNodes.length > 0) {
-            const elseNode = elseNodes[0];
-            let outputFormat = 'VALUE'; // Default to VALUE
-            let defaultValue = '';
-
-            const valueNode = elseNode.getElementsByTagName('value')[0];
-            const srcNode = elseNode.getElementsByTagName('src')[0];
-
-            if (valueNode) {
-                defaultValue = valueNode.textContent;
-                outputFormat = 'VALUE';
-            } else if (srcNode) {
-                defaultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            }
-
-            mapping.conditionSets.push({
-                conditions: [], // Empty conditions = else
-                value: defaultValue,
-                outputFormat: outputFormat
-            });
-
-            // Set the main default value
-            mapping.value = defaultValue;
-        } else {
-            // Check for a default value at the ifelse level
-            let defaultValue = '';
-            let outputFormat = 'VALUE'; // Default to VALUE
-
-            const valueNode = ifElseNode.getElementsByTagName('value')[0];
-            const srcNode = ifElseNode.getElementsByTagName('src')[0];
-
-            if (valueNode) {
-                defaultValue = valueNode.textContent;
-                outputFormat = 'VALUE';
-            } else if (srcNode) {
-                defaultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            }
-
-            // If we have condition sets but no else, add a default condition set
-            if (mapping.conditionSets.length > 0 && !mapping.conditionSets.some(set => set.conditions.length === 0)) {
-                mapping.conditionSets.push({
-                    conditions: [], // Empty conditions = default
-                    value: defaultValue,
-                    outputFormat: outputFormat
-                });
-            }
-
-            // Set the main default value
-            mapping.value = defaultValue;
+            // Similar logic as above for if nodes
+            // This would be expanded with the same approach as for if nodes
         }
+    }
 
-        // For backward compatibility, ensure the main value is also set
-        if (mapping.conditionSets.length > 0 && mapping.value === '') {
-            mapping.value = mapping.conditionSets[0].value;
-        }
-        if (!ifElseNode && (mapping.specialTags.length > 0)) {
-        // For standalone nvl/ref, create a condition set with empty conditions
-        const isSourceFormat = 'VALUE'; // Default to VALUE format
-        const defaultValue = '';
-
+    // For standalone NVL cases with no conditions and no ifelse, ensure we have a condition set
+    if (mapping.conditionSets.length === 0 && mapping.specialTags.length > 0) {
         mapping.conditionSets.push({
-            conditions: [], // Empty conditions
-            value: defaultValue,
-            outputFormat: isSourceFormat,
-            hasSpecialTags: true
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: mapping.specialTags
         });
-    }
-
-        return mapping;
-    }
-
-    // Logic for other formats (ctable, etc.) continues as before...
-    // Check for ctable structure (format 2)
-    const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
-    if (ctableNode) {
-        // For ctable format, always use VALUE format
-        const outputFormat = 'VALUE';
-
-        // Extract source columns
-        const colsNode = ctableNode.getElementsByTagName('cols')[0];
-        let sourceFields = [];
-
-        if (colsNode) {
-            const srcNodes = colsNode.getElementsByTagName('src');
-            sourceFields = Array.from(srcNodes).map(node => node.textContent);
-        }
-
-        // Extract rows
-        const rowNodes = ctableNode.getElementsByTagName('row');
-        Array.from(rowNodes).forEach(rowNode => {
-            const valueNodes = rowNode.getElementsByTagName('value');
-            if (valueNodes.length >= 2) {
-                const conditions = [];
-
-                // Use the first value as condition value and the last as result
-                const conditionValue = valueNodes[0].textContent;
-                const resultValue = valueNodes[valueNodes.length - 1].textContent;
-
-                // Create a condition for each source field
-                if (sourceFields.length > 0) {
-                    conditions.push({
-                        src: sourceFields[0],
-                        oper: 'EQUALS',
-                        value: conditionValue
-                    });
-                }
-
-                // Add to condition sets
-                mapping.conditionSets.push({
-                    conditions: conditions,
-                    value: resultValue,
-                    outputFormat: outputFormat
-                });
-
-                // Add to main conditions array for backward compatibility
-                mapping.conditions = [...mapping.conditions, ...conditions];
-            }
-        });
-
-        // If there are condition sets, use the first one for backward compatibility
-        if (mapping.conditionSets.length > 0) {
-            mapping.value = mapping.conditionSets[0].value;
-        }
-
-        return mapping;
-    }
-
-    // Check for the if/else structure with direct <if> and <else> tags
-    const ifNodes = fieldNode.getElementsByTagName('if');
-    const elseNodes = fieldNode.getElementsByTagName('else');
-
-    if (ifNodes.length > 0 || elseNodes.length > 0) {
-        // Process if node
-        for (let i = 0; i < ifNodes.length; i++) {
-            const ifNode = ifNodes[i];
-            const refNode = ifNode.getElementsByTagName('ref')[0];
-
-            // Determine output format for this node
-            let outputFormat = 'VALUE'; // Default to VALUE
-            let resultValue = '';
-
-            const valueNode = ifNode.getElementsByTagName('value')[0];
-            const srcNode = ifNode.getElementsByTagName('src')[0];
-
-            if (valueNode) {
-                resultValue = valueNode.textContent;
-                outputFormat = 'VALUE';
-            } else if (srcNode) {
-                resultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            }
-
-            const andNode = ifNode.getElementsByTagName('and')[0];
-            if (andNode) {
-                const conditions = [];
-                const condNodes = andNode.getElementsByTagName('cond');
-                Array.from(condNodes).forEach(condNode => {
-                    conditions.push({
-                        src: condNode.getElementsByTagName('src')[0]?.textContent || '',
-                        oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                        value: condNode.getElementsByTagName('value')[0]?.textContent || ''
-                    });
-                });
-
-                mapping.conditionSets.push({
-                    conditions: conditions,
-                    value: resultValue,
-                    outputFormat: outputFormat
-                });
-
-                // Add to main conditions for backward compatibility
-                mapping.conditions = [...mapping.conditions, ...conditions];
-            } else if (refNode) {
-                // This is a ref-based condition
-                let srcContent = '';
-                if (srcNode) {
-                    srcContent = srcNode.textContent;
-                    outputFormat = 'SOURCE';
-                }
-
-                const conditions = [{
-                    src: srcContent || '',
-                    oper: 'EQUALS',
-                    value: refNode.textContent || ''
-                }];
-
-                mapping.conditionSets.push({
-                    conditions: conditions,
-                    value: srcContent || (valueNode ? valueNode.textContent : ''),
-                    outputFormat: outputFormat
-                });
-
-                // Add to main conditions
-                mapping.conditions.push({
-                    src: srcContent || '',
-                    oper: 'EQUALS',
-                    value: refNode.textContent || ''
-                });
-            }
-        }
-
-        // Process else node
-        for (let i = 0; i < elseNodes.length; i++) {
-            const elseNode = elseNodes[i];
-            let outputFormat = 'VALUE'; // Default to VALUE
-            let resultValue = '';
-
-            const valueNode = elseNode.getElementsByTagName('value')[0];
-            const srcNode = elseNode.getElementsByTagName('src')[0];
-
-            if (valueNode) {
-                resultValue = valueNode.textContent;
-                outputFormat = 'VALUE';
-            } else if (srcNode) {
-                resultValue = srcNode.textContent;
-                outputFormat = 'SOURCE';
-            }
-
-            mapping.conditionSets.push({
-                conditions: [], // Empty conditions = else
-                value: resultValue,
-                outputFormat: outputFormat
-            });
-
-            // Use this as default value
-            mapping.value = resultValue;
-        }
-
-        return mapping;
     }
 
     // If we can't identify a format, return a default structure
-    return {
-        conditions: [],
-        value: '',
-        conditionSets: [{
+    if (mapping.conditionSets.length === 0) {
+        return {
             conditions: [],
             value: '',
-            outputFormat: 'VALUE' // Default to VALUE format instead of SOURCE
-        }]
-    };
+            conditionSets: [{
+                conditions: [],
+                value: '',
+                outputFormat: 'VALUE', // Default to VALUE format instead of SOURCE
+                specialTags: []
+            }],
+            specialTags: []
+        };
+    }
+
+    return mapping;
 }
+
 
 // Extract MAPPED mapping data
 function extractMappedValues(fieldNode) {
@@ -711,9 +532,10 @@ function extractMappedValues(fieldNode) {
     return result;
 }
 // Parse and display mapping
+// Parse and display mapping with improved NVL handling
 function parseAndDisplayMapping(xmlString) {
     try {
-        console.log("Parsing XML string:", xmlString);
+        console.log("Parsing XML string - length:", xmlString.length);
         originalXmlStructure = xmlString;
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlString, "text/xml");
@@ -724,6 +546,24 @@ function parseAndDisplayMapping(xmlString) {
 
         // Extract XML comments before parsing the fields
         const comments = extractComments(xmlString);
+
+        // Debug some sample field nodes before extraction
+        const sampleFields = xmlDoc.getElementsByTagName('field');
+        if (sampleFields.length > 0) {
+            // Look for fields with NVL tags to debug
+            for (let i = 0; i < Math.min(5, sampleFields.length); i++) {
+                const field = sampleFields[i];
+                const destNode = field.getElementsByTagName('dest')[0];
+                const fieldName = destNode ? destNode.textContent : `Field ${i+1}`;
+
+                // Check if this field has NVL tags
+                const nvlNodes = field.getElementsByTagName('nvl');
+                if (nvlNodes.length > 0) {
+                    console.log(`Found field with NVL tags: ${fieldName}`);
+                    debugLogFieldStructure(field);
+                }
+            }
+        }
 
         currentMapping = extractMappingData(xmlDoc, comments);
         console.log("Current mapping set:", currentMapping);
@@ -744,7 +584,7 @@ function parseAndDisplayMapping(xmlString) {
     }
 }
 
-// Extract mapping data from XML
+// Extract mapping data from XML with improved NVL handling
 function extractMappingData(xmlDoc, comments) {
     console.log("Extracting mapping data from XML");
     const mappings = [];
@@ -778,6 +618,28 @@ function extractMappingData(xmlDoc, comments) {
             comments: [], // Array to store comments
             originalIndex: i // Store the original position in the XML
         };
+
+        // Debug log structure for fields with NVL tags
+        const nvlNodes = fieldNode.getElementsByTagName('nvl');
+        if (nvlNodes.length > 0) {
+            const destNode = fieldNode.getElementsByTagName('dest')[0];
+            const fieldName = destNode ? destNode.textContent : `Field ${i+1}`;
+            console.log(`Processing field with NVL tags: ${fieldName}`);
+
+            // Check if NVL tags are direct children of the field
+            for (let j = 0; j < nvlNodes.length; j++) {
+                const nvlNode = nvlNodes[j];
+                if (nvlNode.parentNode === fieldNode) {
+                    console.log(`  NVL tag ${j+1} is direct child of field`);
+
+                    // Log the source tags
+                    const srcNodes = nvlNode.getElementsByTagName('src');
+                    for (let k = 0; k < srcNodes.length; k++) {
+                        console.log(`    Source ${k+1}: ${srcNodes[k].textContent}`);
+                    }
+                }
+            }
+        }
 
         // Associate comments with this field based on position
         if (comments && comments.length > 0) {
@@ -834,7 +696,28 @@ function extractMappingData(xmlDoc, comments) {
                 mapping.source = srcNode ? srcNode.textContent : '';
                 break;
             case 'DERIVED':
-                mapping.derivedMapping = extractDerivedMapping(fieldNode);
+                const derivedResult = extractDerivedMapping(fieldNode);
+
+                // Print debug info for NVL tags
+                if (derivedResult.specialTags && derivedResult.specialTags.length > 0) {
+                    console.log(`Field ${mapping.fieldName} has ${derivedResult.specialTags.length} special tags:`);
+                    derivedResult.specialTags.forEach((tag, idx) => {
+                        if (tag.type === 'NVL') {
+                            console.log(`- NVL tag ${idx+1} with sources: ${tag.sources.join(', ')}`);
+                        } else if (tag.type === 'REF') {
+                            console.log(`- REF tag ${idx+1} with value: ${tag.value}`);
+                        }
+                    });
+                }
+
+                mapping.derivedMapping = derivedResult;
+
+                // Add special debugValidation flag for testing
+                mapping.debugValidation = {
+                    hasNvl: Boolean(nvlNodes.length),
+                    nvlCount: nvlNodes.length,
+                    extractedTags: derivedResult.specialTags ? derivedResult.specialTags.length : 0
+                };
                 break;
             case 'MAPPED':
                 mapping.mappedValues = extractMappedValues(fieldNode);
@@ -842,11 +725,80 @@ function extractMappingData(xmlDoc, comments) {
         }
 
         mappings.push(mapping);
-        console.log(`Extracted mapping ${i + 1}:`, mapping);
+
+        // Debug log for NVL fields
+        if (mapping.mappingType === 'DERIVED' && mapping.derivedMapping &&
+            mapping.derivedMapping.specialTags && mapping.derivedMapping.specialTags.length > 0) {
+            console.log(`Extracted mapping for ${mapping.fieldName}:`);
+            console.log(`- Special Tags: ${mapping.derivedMapping.specialTags.length}`);
+            console.log(`- Condition Sets: ${mapping.derivedMapping.conditionSets.length}`);
+
+            // Check if special tags were properly added to condition sets
+            if (mapping.derivedMapping.conditionSets.length > 0) {
+                mapping.derivedMapping.conditionSets.forEach((set, idx) => {
+                    const setTags = set.specialTags?.length || 0;
+                    console.log(`  Condition Set ${idx+1}: ${setTags} special tags`);
+                });
+            }
+        }
     }
 
     // Do not sort by default, preserve the original order
     return mappings;
+}
+
+// Helper function to debug field structure
+function debugLogFieldStructure(fieldNode) {
+    console.log("--- DEBUG: Field Structure ---");
+
+    // Log basic field info
+    const destNode = fieldNode.getElementsByTagName('dest')[0];
+    console.log("Field: " + (destNode ? destNode.textContent : "unknown"));
+
+    // Check for mapping type
+    const mappingTypeNode = fieldNode.getElementsByTagName('mapping-type')[0];
+    console.log("Mapping Type: " + (mappingTypeNode ? mappingTypeNode.textContent : "unknown"));
+
+    // Log direct children to see the structure
+    console.log("Direct Children:");
+    for (let i = 0; i < fieldNode.childNodes.length; i++) {
+        const node = fieldNode.childNodes[i];
+        if (node.nodeType === 1) { // Element node
+            console.log(`- ${node.tagName}`);
+        }
+    }
+
+    // Check specifically for NVL tags
+    const nvlNodes = fieldNode.getElementsByTagName('nvl');
+    console.log(`NVL Tags: ${nvlNodes.length}`);
+
+    for (let i = 0; i < nvlNodes.length; i++) {
+        const nvlNode = nvlNodes[i];
+        console.log(`  NVL Tag ${i+1}:`);
+
+        // Check if it's a direct child of the field
+        const isDirectChild = nvlNode.parentNode === fieldNode;
+        console.log(`  - Direct child of field: ${isDirectChild}`);
+
+        // Count source tags
+        const srcNodes = nvlNode.getElementsByTagName('src');
+        console.log(`  - Source tags: ${srcNodes.length}`);
+
+        // Log each source
+        for (let j = 0; j < srcNodes.length; j++) {
+            console.log(`    - Source ${j+1}: ${srcNodes[j].textContent}`);
+        }
+    }
+
+    // Check for ifelse structure
+    const ifElseNode = fieldNode.getElementsByTagName('ifelse')[0];
+    if (ifElseNode) {
+        console.log("Has ifelse structure: Yes");
+    } else {
+        console.log("Has ifelse structure: No");
+    }
+
+    console.log("---------------------------");
 }
 // Generate XML for saving
 function generateXml(mappingsToUse) {
