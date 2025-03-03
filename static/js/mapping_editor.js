@@ -199,7 +199,67 @@ function resetMappingTypeData(mapping, newType) {
             break;
     }
 }
+function debugDerivedMapping(fieldNode, mapping) {
+    console.log("DEBUG: Derived Mapping Extraction");
+    console.log("------------------------------");
 
+    // Log the XML structure
+    const serializer = new XMLSerializer();
+    console.log("XML Structure:", serializer.serializeToString(fieldNode));
+
+    // Check for if/else structure
+    const ifNodes = fieldNode.getElementsByTagName('if');
+    if (ifNodes.length > 0) {
+        console.log("Found IF nodes:", ifNodes.length);
+        for (let i = 0; i < ifNodes.length; i++) {
+            const ifNode = ifNodes[i];
+            const andNode = ifNode.getElementsByTagName('and')[0];
+
+            // Log direct children of if node
+            console.log(`IF node ${i+1} direct children:`);
+            for (let j = 0; j < ifNode.childNodes.length; j++) {
+                const child = ifNode.childNodes[j];
+                if (child.nodeType === 1) { // Element node
+                    console.log(`- ${child.tagName}: ${child.textContent}`);
+                }
+            }
+
+            // Log the value tag that should be the result
+            const valueNodes = ifNode.getElementsByTagName('value');
+            for (let j = 0; j < valueNodes.length; j++) {
+                const node = valueNodes[j];
+                const isInAnd = andNode && andNode.contains(node);
+                console.log(`Value node ${j+1}: ${node.textContent} (inside AND: ${isInAnd})`);
+            }
+        }
+    }
+
+    // Log the final extracted mapping
+    console.log("Extracted mapping:", mapping);
+    console.log("First condition set value:", mapping.conditionSets[0]?.value);
+    console.log("------------------------------");
+
+    return mapping;
+}
+
+// Function to add to mappingTableDialog.js to help debug dialog rendering
+function debugMappingDialogValues(data) {
+    console.log("DEBUG: Mapping Dialog Values");
+    console.log("------------------------------");
+    console.log("Initial data:", data);
+
+    if (data.conditionSets && data.conditionSets.length > 0) {
+        data.conditionSets.forEach((set, index) => {
+            console.log(`Condition Set ${index+1}:`);
+            console.log("- Conditions:", set.conditions);
+            console.log("- Result Value:", set.value);
+            console.log("- Output Format:", set.outputFormat);
+        });
+    }
+
+    console.log("Main value:", data.value);
+    console.log("------------------------------");
+}
 // Make these functions available globally
 window.handleAddRow = handleAddRow;
 window.handleMappingDelete = handleMappingDelete;
@@ -237,19 +297,58 @@ function extractDerivedMapping(fieldNode) {
                     });
                 });
 
-                // Determine the output format for this condition set
+                // IMPORTANT FIX: Look for the result value in the <if> tag directly (not inside <and>)
+                // This ensures we get the correct result value separate from condition values
                 let outputFormat = 'VALUE'; // Default to VALUE if <value> tag is found
                 let resultValue = '';
 
-                // Check for value tag first (since your examples show this is the desired format)
-                const valueNode = ifNode.getElementsByTagName('value')[0];
-                const srcNode = ifNode.getElementsByTagName('src')[0];
+                // Check if there are direct child value/src nodes in the ifNode (outside andNode)
+                // First look for direct child nodes
+                let directValueNode = null;
+                let directSrcNode = null;
 
-                if (valueNode) {
-                    resultValue = valueNode.textContent;
+                // We need to find the <value> or <src> tag that is a direct child of <if>
+                // and NOT inside the <and> block
+                for (let i = 0; i < ifNode.childNodes.length; i++) {
+                    const node = ifNode.childNodes[i];
+                    if (node.nodeType === 1) { // Element node
+                        if (node.tagName === 'value' && node !== andNode) {
+                            directValueNode = node;
+                        } else if (node.tagName === 'src' && node !== andNode) {
+                            directSrcNode = node;
+                        }
+                    }
+                }
+
+                // If direct children approach didn't work, try with getElementsByTagName
+                // but check if they're not inside the <and> block
+                if (!directValueNode && !directSrcNode) {
+                    const valueNodes = ifNode.getElementsByTagName('value');
+                    const srcNodes = ifNode.getElementsByTagName('src');
+
+                    // Filter out nodes that are inside the <and> block
+                    for (let i = 0; i < valueNodes.length; i++) {
+                        const node = valueNodes[i];
+                        if (!andNode.contains(node) && node.parentNode === ifNode) {
+                            directValueNode = node;
+                            break;
+                        }
+                    }
+
+                    for (let i = 0; i < srcNodes.length; i++) {
+                        const node = srcNodes[i];
+                        if (!andNode.contains(node) && node.parentNode === ifNode) {
+                            directSrcNode = node;
+                            break;
+                        }
+                    }
+                }
+
+                if (directValueNode) {
+                    resultValue = directValueNode.textContent;
                     outputFormat = 'VALUE';
-                } else if (srcNode) {
-                    resultValue = srcNode.textContent;
+                } else if (directSrcNode) {
+                    resultValue = directSrcNode.textContent;
                     outputFormat = 'SOURCE';
                 }
 
@@ -265,7 +364,7 @@ function extractDerivedMapping(fieldNode) {
             }
         });
 
-        // Process else-if nodes
+        // Process else-if nodes with similar logic to correctly extract result values
         elseIfNodes.forEach(elseIfNode => {
             const andNode = elseIfNode.getElementsByTagName('and')[0];
             if (andNode) {
@@ -279,18 +378,52 @@ function extractDerivedMapping(fieldNode) {
                     });
                 });
 
-                // Determine output format for this condition
-                let outputFormat = 'VALUE'; // Default to VALUE
+                // Similar fix for else-if nodes to get correct result value
+                let outputFormat = 'VALUE';
                 let resultValue = '';
 
-                const valueNode = elseIfNode.getElementsByTagName('value')[0];
-                const srcNode = elseIfNode.getElementsByTagName('src')[0];
+                // Look for direct child value/src nodes
+                let directValueNode = null;
+                let directSrcNode = null;
 
-                if (valueNode) {
-                    resultValue = valueNode.textContent;
+                for (let i = 0; i < elseIfNode.childNodes.length; i++) {
+                    const node = elseIfNode.childNodes[i];
+                    if (node.nodeType === 1) { // Element node
+                        if (node.tagName === 'value' && node !== andNode) {
+                            directValueNode = node;
+                        } else if (node.tagName === 'src' && node !== andNode) {
+                            directSrcNode = node;
+                        }
+                    }
+                }
+
+                // If direct approach fails, try filtering
+                if (!directValueNode && !directSrcNode) {
+                    const valueNodes = elseIfNode.getElementsByTagName('value');
+                    const srcNodes = elseIfNode.getElementsByTagName('src');
+
+                    for (let i = 0; i < valueNodes.length; i++) {
+                        const node = valueNodes[i];
+                        if (!andNode.contains(node) && node.parentNode === elseIfNode) {
+                            directValueNode = node;
+                            break;
+                        }
+                    }
+
+                    for (let i = 0; i < srcNodes.length; i++) {
+                        const node = srcNodes[i];
+                        if (!andNode.contains(node) && node.parentNode === elseIfNode) {
+                            directSrcNode = node;
+                            break;
+                        }
+                    }
+                }
+
+                if (directValueNode) {
+                    resultValue = directValueNode.textContent;
                     outputFormat = 'VALUE';
-                } else if (srcNode) {
-                    resultValue = srcNode.textContent;
+                } else if (directSrcNode) {
+                    resultValue = directSrcNode.textContent;
                     outputFormat = 'SOURCE';
                 }
 
@@ -356,9 +489,15 @@ function extractDerivedMapping(fieldNode) {
             mapping.value = defaultValue;
         }
 
+        // For backward compatibility, ensure the main value is also set
+        if (mapping.conditionSets.length > 0 && mapping.value === '') {
+            mapping.value = mapping.conditionSets[0].value;
+        }
+
         return mapping;
     }
 
+    // Logic for other formats (ctable, etc.) continues as before...
     // Check for ctable structure (format 2)
     const ctableNode = fieldNode.getElementsByTagName('ctable')[0];
     if (ctableNode) {

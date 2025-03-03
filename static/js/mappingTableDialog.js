@@ -5,49 +5,30 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
         mappings: initialData?.mappings || []
     });
 
-    const [derivedMapping, setDerivedMapping] = React.useState({
-        conditions: initialData?.conditions || [],
-        value: initialData?.value || '',
-        conditionSets: initialData?.conditionSets || []
-        // Removed global outputFormat
-    });
+const [derivedMapping, setDerivedMapping] = React.useState({
+    conditions: initialData?.conditions || [],
+    value: initialData?.value || '',
+    conditionSets: initialData?.conditionSets || []
+});
 
     React.useEffect(() => {
     // Initialize derived mapping with conditional sets if available
     if (mappingType === 'DERIVED' && initialData) {
         if (initialData.conditionSets && initialData.conditionSets.length > 0) {
-            // Ensure each condition set has its own outputFormat
-            const enhancedConditionSets = initialData.conditionSets.map(set => {
-                // Detect output format for this specific set
-                let outputFormat = set.outputFormat || 'VALUE'; // Default to VALUE format
-
-                // Look for indicators that this set uses source format if the format isn't specified
-                if (!set.outputFormat && (
-                    set.useSourceTag ||
-                    (set.conditions.some(cond => cond.src === set.value)) ||
-                    initialData.outputFormat === 'SOURCE')
-                ) {
-                    outputFormat = 'SOURCE';
-                }
-
-                return {
-                    ...set,
-                    outputFormat
-                };
-            });
-
+            // Use the entire condition set as is, ensuring result values are preserved
             setDerivedMapping({
                 ...derivedMapping,
-                conditionSets: enhancedConditionSets,
+                conditionSets: initialData.conditionSets,
                 // Keep conditions for backward compatibility
-                conditions: initialData.conditions || []
+                conditions: initialData.conditions || [],
+                value: initialData.value || ''
             });
         } else if (initialData.conditions && initialData.conditions.length > 0) {
             // Convert old format to new format if needed
             const outputFormat = initialData.outputFormat || 'VALUE'; // Default to VALUE
             const defaultSet = {
                 conditions: initialData.conditions || [],
-                value: initialData.value || '',
+                value: initialData.value || '', // Important: use the correct result value
                 outputFormat
             };
             setDerivedMapping({
@@ -391,7 +372,7 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                                     <h4 className="text-md font-medium mb-2">Result Value</h4>
                                     <input
                                         type="text"
-                                        value={conditionSet.value}
+                                        value={conditionSet.value || ''} // Make sure this is the correct result value
                                         onChange={(e) => handleResultValueChange(setIndex, e.target.value)}
                                         className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                                             conditionSet.outputFormat === 'SOURCE' ? 'bg-gray-100' : ''
