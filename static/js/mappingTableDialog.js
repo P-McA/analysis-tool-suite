@@ -1,55 +1,92 @@
-// Updated MappingTableDialog component with per-condition output format
+// Complete MappingTableDialog component with NVL/REF support
 const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave }) => {
     const [mappedValues, setMappedValues] = React.useState({
         src: initialData?.src || '',
         mappings: initialData?.mappings || []
     });
 
-const [derivedMapping, setDerivedMapping] = React.useState({
-    conditions: initialData?.conditions || [],
-    value: initialData?.value || '',
-    conditionSets: initialData?.conditionSets || []
-});
+    const [derivedMapping, setDerivedMapping] = React.useState({
+        conditions: initialData?.conditions || [],
+        value: initialData?.value || '',
+        conditionSets: initialData?.conditionSets || [],
+        specialTags: initialData?.specialTags || []
+    });
+
+    // Track which condition sets have special tag types
+    const [specialTagTypes, setSpecialTagTypes] = React.useState({});
 
     React.useEffect(() => {
-    // Initialize derived mapping with conditional sets if available
-    if (mappingType === 'DERIVED' && initialData) {
-        if (initialData.conditionSets && initialData.conditionSets.length > 0) {
-            // Use the entire condition set as is, ensuring result values are preserved
-            setDerivedMapping({
-                ...derivedMapping,
-                conditionSets: initialData.conditionSets,
-                // Keep conditions for backward compatibility
-                conditions: initialData.conditions || [],
-                value: initialData.value || ''
-            });
-        } else if (initialData.conditions && initialData.conditions.length > 0) {
-            // Convert old format to new format if needed
-            const outputFormat = initialData.outputFormat || 'VALUE'; // Default to VALUE
-            const defaultSet = {
-                conditions: initialData.conditions || [],
-                value: initialData.value || '', // Important: use the correct result value
-                outputFormat
-            };
-            setDerivedMapping({
-                conditions: initialData.conditions || [],
-                value: initialData.value || '',
-                conditionSets: [defaultSet]
-            });
-        } else {
-            // Initialize with empty condition set if nothing exists
-            setDerivedMapping({
-                conditions: [],
-                value: initialData.value || '',
-                conditionSets: [{
+        // Initialize derived mapping with conditional sets if available
+        if (mappingType === 'DERIVED' && initialData) {
+            // Initialize special tag types based on initialData
+            if (initialData.specialTags && initialData.specialTags.length > 0) {
+                const newSpecialTagTypes = {};
+                initialData.specialTags.forEach((tag, index) => {
+                    newSpecialTagTypes[index] = tag.type; // NVL or REF
+                });
+                setSpecialTagTypes(newSpecialTagTypes);
+            }
+
+            if (initialData.conditionSets && initialData.conditionSets.length > 0) {
+                // Ensure each condition set has its own outputFormat
+                const enhancedConditionSets = initialData.conditionSets.map(set => {
+                    // Detect output format for this specific set
+                    let outputFormat = set.outputFormat || 'VALUE'; // Default to VALUE format
+
+                    // Look for indicators that this set uses source format if the format isn't specified
+                    if (!set.outputFormat && (
+                        set.useSourceTag ||
+                        (set.conditions.some(cond => cond.src === set.value)) ||
+                        initialData.outputFormat === 'SOURCE')
+                    ) {
+                        outputFormat = 'SOURCE';
+                    }
+
+                    return {
+                        ...set,
+                        outputFormat,
+                        specialTags: set.specialTags || []
+                    };
+                });
+
+                setDerivedMapping({
+                    ...derivedMapping,
+                    conditionSets: enhancedConditionSets,
+                    specialTags: initialData.specialTags || [],
+                    // Keep conditions for backward compatibility
+                    conditions: initialData.conditions || []
+                });
+            } else if (initialData.conditions && initialData.conditions.length > 0) {
+                // Convert old format to new format if needed
+                const outputFormat = initialData.outputFormat || 'VALUE'; // Default to VALUE
+                const defaultSet = {
+                    conditions: initialData.conditions || [],
+                    value: initialData.value || '',
+                    outputFormat,
+                    specialTags: initialData.specialTags || []
+                };
+                setDerivedMapping({
+                    conditions: initialData.conditions || [],
+                    value: initialData.value || '',
+                    conditionSets: [defaultSet],
+                    specialTags: initialData.specialTags || []
+                });
+            } else {
+                // Initialize with empty condition set if nothing exists
+                setDerivedMapping({
                     conditions: [],
                     value: initialData.value || '',
-                    outputFormat: 'VALUE' // Default to VALUE format
-                }]
-            });
+                    conditionSets: [{
+                        conditions: [],
+                        value: initialData.value || '',
+                        outputFormat: 'VALUE', // Default to VALUE format
+                        specialTags: []
+                    }],
+                    specialTags: initialData.specialTags || []
+                });
+            }
         }
-    }
-}, [mappingType, initialData]);
+    }, [mappingType, initialData]);
 
     // Handle changing output format for a specific condition set
     const handleOutputFormatChange = (setIndex, format) => {
@@ -61,7 +98,131 @@ const [derivedMapping, setDerivedMapping] = React.useState({
         });
     };
 
-    // Handle adding mapped values
+    // Handle adding a special tag (NVL/REF) to a condition set
+    const handleAddSpecialTag = (setIndex, tagType) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (!newConditionSets[setIndex].specialTags) {
+            newConditionSets[setIndex].specialTags = [];
+        }
+
+        if (tagType === 'NVL') {
+            newConditionSets[setIndex].specialTags.push({
+                type: 'NVL',
+                sources: [''] // Initialize with one empty source
+            });
+        } else if (tagType === 'REF') {
+            newConditionSets[setIndex].specialTags.push({
+                type: 'REF',
+                value: ''
+            });
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+
+        // Update the special tag types tracking
+        setSpecialTagTypes({
+            ...specialTagTypes,
+            [setIndex]: tagType
+        });
+    };
+
+    // Handle removing a special tag from a condition set
+    const handleRemoveSpecialTag = (setIndex, tagIndex) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (newConditionSets[setIndex].specialTags) {
+            newConditionSets[setIndex].specialTags = newConditionSets[setIndex].specialTags.filter((_, i) => i !== tagIndex);
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+
+        // Update the special tag types tracking if no tags left
+        if (newConditionSets[setIndex].specialTags.length === 0) {
+            const newTypes = {...specialTagTypes};
+            delete newTypes[setIndex];
+            setSpecialTagTypes(newTypes);
+        }
+    };
+
+    // Handle updating NVL source values
+    const handleNvlSourceChange = (setIndex, tagIndex, sourceIndex, value) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (newConditionSets[setIndex].specialTags &&
+            newConditionSets[setIndex].specialTags[tagIndex] &&
+            newConditionSets[setIndex].specialTags[tagIndex].sources) {
+
+            newConditionSets[setIndex].specialTags[tagIndex].sources[sourceIndex] = value;
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle adding a new source to an NVL tag
+    const handleAddNvlSource = (setIndex, tagIndex) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (newConditionSets[setIndex].specialTags &&
+            newConditionSets[setIndex].specialTags[tagIndex] &&
+            newConditionSets[setIndex].specialTags[tagIndex].sources) {
+
+            newConditionSets[setIndex].specialTags[tagIndex].sources.push('');
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle removing a source from an NVL tag
+    const handleRemoveNvlSource = (setIndex, tagIndex, sourceIndex) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (newConditionSets[setIndex].specialTags &&
+            newConditionSets[setIndex].specialTags[tagIndex] &&
+            newConditionSets[setIndex].specialTags[tagIndex].sources) {
+
+            // Don't remove if it's the last source
+            if (newConditionSets[setIndex].specialTags[tagIndex].sources.length > 1) {
+                newConditionSets[setIndex].specialTags[tagIndex].sources =
+                    newConditionSets[setIndex].specialTags[tagIndex].sources.filter((_, i) => i !== sourceIndex);
+            }
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle updating REF value
+    const handleRefValueChange = (setIndex, tagIndex, value) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        if (newConditionSets[setIndex].specialTags &&
+            newConditionSets[setIndex].specialTags[tagIndex]) {
+
+            newConditionSets[setIndex].specialTags[tagIndex].value = value;
+        }
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle mapped values functions...
     const handleAddMapping = () => {
         setMappedValues({
             ...mappedValues,
@@ -69,25 +230,22 @@ const [derivedMapping, setDerivedMapping] = React.useState({
         });
     };
 
-    // Handle updating mapped values
     const handleMappingChange = (index, field, value) => {
         const newMappings = [...mappedValues.mappings];
         newMappings[index] = { ...newMappings[index], [field]: value };
         setMappedValues({ ...mappedValues, mappings: newMappings });
     };
 
-    // Handle removing mapped values
     const handleRemoveMapping = (index) => {
         const newMappings = mappedValues.mappings.filter((_, i) => i !== index);
         setMappedValues({ ...mappedValues, mappings: newMappings });
     };
 
-    // Handle source field change for mapped values
     const handleSourceChange = (e) => {
         setMappedValues({ ...mappedValues, src: e.target.value });
     };
 
-    // Handle adding a condition to a specific condition set
+    // Handle derived mapping functions...
     const handleAddCondition = (setIndex) => {
         const newConditionSets = [...derivedMapping.conditionSets];
         newConditionSets[setIndex].conditions = [
@@ -97,7 +255,6 @@ const [derivedMapping, setDerivedMapping] = React.useState({
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
     };
 
-    // Handle updating a condition in a condition set
     const handleConditionChange = (setIndex, condIndex, field, value) => {
         const newConditionSets = [...derivedMapping.conditionSets];
         newConditionSets[setIndex].conditions[condIndex] = {
@@ -113,21 +270,18 @@ const [derivedMapping, setDerivedMapping] = React.useState({
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
     };
 
-    // Handle removing a condition from a condition set
     const handleRemoveCondition = (setIndex, condIndex) => {
         const newConditionSets = [...derivedMapping.conditionSets];
         newConditionSets[setIndex].conditions = newConditionSets[setIndex].conditions.filter((_, i) => i !== condIndex);
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
     };
 
-    // Handle result value change for a condition set
     const handleResultValueChange = (setIndex, value) => {
         const newConditionSets = [...derivedMapping.conditionSets];
         newConditionSets[setIndex].value = value;
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
     };
 
-    // Handle adding a new condition set
     const handleAddConditionSet = () => {
         setDerivedMapping({
             ...derivedMapping,
@@ -136,13 +290,13 @@ const [derivedMapping, setDerivedMapping] = React.useState({
                 {
                     conditions: [],
                     value: '',
-                    outputFormat: 'VALUE' // Default to VALUE for new sets
+                    outputFormat: 'VALUE', // Default to VALUE for new sets
+                    specialTags: []
                 }
             ]
         });
     };
 
-    // Handle removing a condition set
     const handleRemoveConditionSet = (setIndex) => {
         if (derivedMapping.conditionSets.length <= 1) {
             return; // Don't remove the last set
@@ -150,6 +304,21 @@ const [derivedMapping, setDerivedMapping] = React.useState({
 
         const newConditionSets = derivedMapping.conditionSets.filter((_, i) => i !== setIndex);
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
+
+        // Update specialTagTypes by removing the deleted set
+        const newTagTypes = {...specialTagTypes};
+        delete newTagTypes[setIndex];
+
+        // Reindex the keys that are greater than setIndex
+        Object.keys(newTagTypes).forEach(key => {
+            const numKey = parseInt(key);
+            if (numKey > setIndex) {
+                newTagTypes[numKey - 1] = newTagTypes[numKey];
+                delete newTagTypes[numKey];
+            }
+        });
+
+        setSpecialTagTypes(newTagTypes);
     };
 
     // Handle saving the dialog
@@ -157,13 +326,22 @@ const [derivedMapping, setDerivedMapping] = React.useState({
         if (mappingType === 'MAPPED') {
             onSave(mappedValues);
         } else if (mappingType === 'DERIVED') {
+            // Extract specialTags from condition sets for backward compatibility
+            const allSpecialTags = [];
+            derivedMapping.conditionSets.forEach(set => {
+                if (set.specialTags && set.specialTags.length > 0) {
+                    allSpecialTags.push(...set.specialTags);
+                }
+            });
+
             // For backward compatibility, we'll keep the old format
             // but use the new enhanced format for processing
             const enhancedDerivedMapping = {
                 ...derivedMapping,
                 // Update the main value and conditions from the first set for backward compatibility
                 conditions: derivedMapping.conditionSets[0]?.conditions || [],
-                value: derivedMapping.conditionSets[0]?.value || ''
+                value: derivedMapping.conditionSets[0]?.value || '',
+                specialTags: allSpecialTags
             };
             onSave(enhancedDerivedMapping);
         }
@@ -172,6 +350,94 @@ const [derivedMapping, setDerivedMapping] = React.useState({
 
     // If the dialog is not open, don't render anything
     if (!isOpen) return null;
+
+    // Render special tag selector and editor
+    const renderSpecialTagEditor = (setIndex) => {
+        const conditionSet = derivedMapping.conditionSets[setIndex];
+        const specialTags = conditionSet.specialTags || [];
+
+        return (
+            <div className="mb-4 bg-white p-3 rounded border">
+                <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-md font-medium">Special Tags (NVL/REF)</h4>
+                    <div className="flex items-center">
+                        <select
+                            className="mr-2 p-2 border rounded"
+                            onChange={(e) => handleAddSpecialTag(setIndex, e.target.value)}
+                            value=""
+                        >
+                            <option value="" disabled>Add tag type...</option>
+                            <option value="NVL">NVL</option>
+                            <option value="REF">REF</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Render existing special tags */}
+                {specialTags.length > 0 ? (
+                    <div className="space-y-3">
+                        {specialTags.map((tag, tagIndex) => (
+                            <div key={tagIndex} className="p-2 bg-gray-50 rounded border">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h5 className="text-sm font-medium">{tag.type} Tag</h5>
+                                    <button
+                                        onClick={() => handleRemoveSpecialTag(setIndex, tagIndex)}
+                                        className="text-red-600 hover:text-red-800"
+                                    >
+                                        <i className="fas fa-times"></i>
+                                    </button>
+                                </div>
+
+                                {tag.type === 'NVL' ? (
+                                    <div className="space-y-2">
+                                        {tag.sources.map((source, sourceIndex) => (
+                                            <div key={sourceIndex} className="flex items-center">
+                                                <input
+                                                    type="text"
+                                                    value={source}
+                                                    onChange={(e) => handleNvlSourceChange(setIndex, tagIndex, sourceIndex, e.target.value)}
+                                                    className="flex-grow p-2 border rounded mr-2"
+                                                    placeholder="Source field"
+                                                />
+                                                {tag.sources.length > 1 && (
+                                                    <button
+                                                        onClick={() => handleRemoveNvlSource(setIndex, tagIndex, sourceIndex)}
+                                                        className="text-red-600 hover:text-red-800 mr-2"
+                                                    >
+                                                        <i className="fas fa-minus"></i>
+                                                    </button>
+                                                )}
+                                                {sourceIndex === tag.sources.length - 1 && (
+                                                    <button
+                                                        onClick={() => handleAddNvlSource(setIndex, tagIndex)}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        <i className="fas fa-plus"></i>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : tag.type === 'REF' ? (
+                                    <div>
+                                        <input
+                                            type="text"
+                                            value={tag.value || ''}
+                                            onChange={(e) => handleRefValueChange(setIndex, tagIndex, e.target.value)}
+                                            className="w-full p-2 border rounded"
+                                            placeholder="Reference value"
+                                        />
+                                    </div>
+                                ) : null}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-gray-500 italic">No special tags added yet.</p>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 z-50 flex items-center justify-center">
@@ -285,6 +551,9 @@ const [derivedMapping, setDerivedMapping] = React.useState({
                                     )}
                                 </div>
 
+                                {/* Special Tags (NVL/REF) Editor */}
+                                {renderSpecialTagEditor(setIndex)}
+
                                 <div className="mb-4">
                                     <h4 className="text-md font-medium mb-2">Conditions</h4>
                                     {conditionSet.conditions.length === 0 ? (
@@ -313,6 +582,7 @@ const [derivedMapping, setDerivedMapping] = React.useState({
                                                     <option value="NOT_CONTAINS">NOT CONTAINS</option>
                                                     <option value="STARTS_WITH">STARTS WITH</option>
                                                     <option value="ENDS_WITH">ENDS WITH</option>
+                                                    <option value="MATCHES">MATCHES</option>
                                                 </select>
                                                 <input
                                                     type="text"
@@ -372,7 +642,7 @@ const [derivedMapping, setDerivedMapping] = React.useState({
                                     <h4 className="text-md font-medium mb-2">Result Value</h4>
                                     <input
                                         type="text"
-                                        value={conditionSet.value || ''} // Make sure this is the correct result value
+                                        value={conditionSet.value}
                                         onChange={(e) => handleResultValueChange(setIndex, e.target.value)}
                                         className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${
                                             conditionSet.outputFormat === 'SOURCE' ? 'bg-gray-100' : ''
