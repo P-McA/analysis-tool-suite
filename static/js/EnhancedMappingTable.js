@@ -105,32 +105,32 @@ const EnhancedMappingTable = () => {
 
     // Sort mappings based on current sort field and direction
     // But always keep newly added rows at the top
-const sortedMappings = React.useMemo(() => {
-    // Split mappings into new and existing
-    const newRows = filteredMappings.filter(isNewlyAdded);
-    const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
+    const sortedMappings = React.useMemo(() => {
+        // Split mappings into new and existing
+        const newRows = filteredMappings.filter(isNewlyAdded);
+        const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
 
-    // Sort only the existing rows
-    const sortedExisting = [...existingRows].sort((a, b) => {
-        // If sortField is 'originalIndex', use that for sorting
-        if (sortField === 'originalIndex') {
-            return sortDirection === 'asc'
-                ? (a.originalIndex || 0) - (b.originalIndex || 0)
-                : (b.originalIndex || 0) - (a.originalIndex || 0);
-        }
+        // Sort only the existing rows
+        const sortedExisting = [...existingRows].sort((a, b) => {
+            // If sortField is 'originalIndex', use that for sorting
+            if (sortField === 'originalIndex') {
+                return sortDirection === 'asc'
+                    ? (a.originalIndex || 0) - (b.originalIndex || 0)
+                    : (b.originalIndex || 0) - (a.originalIndex || 0);
+            }
 
-        // Otherwise use regular string/value comparison
-        let aValue = a[sortField] || '';
-        let bValue = b[sortField] || '';
-        if (typeof aValue === 'string') aValue = aValue.toLowerCase();
-        if (typeof bValue === 'string') bValue = bValue.toLowerCase();
-        const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-        return sortDirection === 'asc' ? comparison : -comparison;
-    });
+            // Otherwise use regular string/value comparison
+            let aValue = a[sortField] || '';
+            let bValue = b[sortField] || '';
+            if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+            if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+            const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+            return sortDirection === 'asc' ? comparison : -comparison;
+        });
 
-    // Combine with new rows at the top
-    return [...newRows, ...sortedExisting];
-}, [filteredMappings, sortField, sortDirection, updateTimestamp]);
+        // Combine with new rows at the top
+        return [...newRows, ...sortedExisting];
+    }, [filteredMappings, sortField, sortDirection, updateTimestamp]);
 
     const handleSort = (field) => {
         console.log("Sorting by field:", field);
@@ -180,7 +180,6 @@ const sortedMappings = React.useMemo(() => {
             window.handleMappingUpdate(index, field, value);
         }
     };
-
     const renderMappedValuesGrid = (mapping) => {
         if (!mapping.mappedValues?.mappings?.length) return null;
 
@@ -209,6 +208,7 @@ const sortedMappings = React.useMemo(() => {
     const renderSourceCell = (mapping, index) => {
         switch (mapping.mappingType) {
             case 'PASSED_THROUGH':
+            case 'DEFAULTED':
                 return (
                     <input
                         type="text"
@@ -400,73 +400,74 @@ const sortedMappings = React.useMemo(() => {
 
     // Render a row with highlight if it's newly added
     const renderRow = (mapping, index, originalIndex) => {
-    const isNew = isNewlyAdded(mapping);
+        const isNew = isNewlyAdded(mapping);
 
-    return (
-        <tr key={index} className={`hover:bg-gray-50 ${isNew ? 'bg-blue-50' : ''}`}>
-            <td className="px-6 py-4">
-                <input
-                    type="text"
-                    value={mapping.fieldName || ''}
-                    onChange={(e) => handleInputChange(originalIndex, 'fieldName', e.target.value)}
-                    className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                />
-            </td>
-            <td className="px-6 py-4">
-                {renderSourceCell(mapping, originalIndex)}
-            </td>
-            <td className="px-6 py-4">
-                <select
-                    value={mapping.mappingType || 'NONE'}
-                    onChange={(e) => handleInputChange(originalIndex, 'mappingType', e.target.value)}
-                    className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                >
-                    {filterOptions.mappingType.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                    ))}
-                </select>
-            </td>
-            <td className="px-6 py-4">
-                {/* Notes column */}
-                <input
-                    type="text"
-                    value={mapping.notes || ''}
-                    onChange={(e) => handleInputChange(originalIndex, 'notes', e.target.value)}
-                    className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                    placeholder="Notes..."
-                />
-            </td>
-            <td className="px-6 py-4">
-                {/* Tickets column with tag input */}
-                <TicketTagsInput
-                    tickets={mapping.tickets || ''}
-                    onChange={handleInputChange}
-                    index={originalIndex}
-                />
-            </td>
-            <td className="px-6 py-4">
-                <select
-                    value={mapping.status || 'GOOD'}
-                    onChange={(e) => handleInputChange(originalIndex, 'status', e.target.value)}
-                    className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                >
-                    {filterOptions.status.map(status => (
-                        <option key={status} value={status}>{status}</option>
-                    ))}
-                </select>
-            </td>
-            <td className="px-6 py-4 text-center">
-                <button
-                    onClick={() => handleDeleteClick(originalIndex)}
-                    className="text-red-600 hover:text-red-800"
-                    title="Delete mapping"
-                >
-                    <i className="fas fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-    );
-};
+        return (
+            <tr key={index} className={`hover:bg-gray-50 ${isNew ? 'bg-blue-50' : ''}`}>
+                <td className="px-6 py-4">
+                    <input
+                        type="text"
+                        value={mapping.fieldName || ''}
+                        onChange={(e) => handleInputChange(originalIndex, 'fieldName', e.target.value)}
+                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                    />
+                </td>
+                <td className="px-6 py-4">
+                    {renderSourceCell(mapping, originalIndex)}
+                </td>
+                <td className="px-6 py-4">
+                    <select
+                        value={mapping.mappingType || 'NONE'}
+                        onChange={(e) => handleInputChange(originalIndex, 'mappingType', e.target.value)}
+                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                    >
+                        {filterOptions.mappingType.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                        ))}
+                    </select>
+                </td>
+                <td className="px-6 py-4">
+                    {/* Notes column */}
+                    <input
+                        type="text"
+                        value={mapping.notes || ''}
+                        onChange={(e) => handleInputChange(originalIndex, 'notes', e.target.value)}
+                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                        placeholder="Notes..."
+                    />
+                </td>
+                <td className="px-6 py-4">
+                    {/* Tickets column with tag input */}
+                    <TicketTagsInput
+                        tickets={mapping.tickets || ''}
+                        onChange={handleInputChange}
+                        index={originalIndex}
+                    />
+                </td>
+                <td className="px-6 py-4">
+                    <select
+                        value={mapping.status || 'GOOD'}
+                        onChange={(e) => handleInputChange(originalIndex, 'status', e.target.value)}
+                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                    >
+                        {filterOptions.status.map(status => (
+                            <option key={status} value={status}>{status}</option>
+                        ))}
+                    </select>
+                </td>
+                <td className="px-6 py-4 text-center">
+                    <button
+                        onClick={() => handleDeleteClick(originalIndex)}
+                        className="text-red-600 hover:text-red-800"
+                        title="Delete mapping"
+                    >
+                        <i className="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        );
+    };
+
     return (
         <div>
             {/* Filter status and clear button */}

@@ -1,4 +1,4 @@
-// Complete MappingTableDialog component with NVL/REF support
+// Complete MappingTableDialog component with NVL/REF and multiple values support
 const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave }) => {
     const [mappedValues, setMappedValues] = React.useState({
         src: initialData?.src || '',
@@ -14,6 +14,9 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
 
     // Track which condition sets have special tag types
     const [specialTagTypes, setSpecialTagTypes] = React.useState({});
+
+    // Track which conditions have their multiple values section open
+    const [multipleValuesOpen, setMultipleValuesOpen] = React.useState({});
 
     React.useEffect(() => {
         // Initialize derived mapping with conditional sets if available
@@ -222,6 +225,55 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
         });
     };
 
+    // Handle changing an additional value
+    const handleAdditionalValueChange = (setIndex, condIndex, valueIndex, newValue) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        // Ensure additionalValues array exists
+        if (!newConditionSets[setIndex].conditions[condIndex].additionalValues) {
+            newConditionSets[setIndex].conditions[condIndex].additionalValues = [];
+        }
+
+        // Update the value
+        newConditionSets[setIndex].conditions[condIndex].additionalValues[valueIndex] = newValue;
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle adding a new additional value
+    const handleAddAdditionalValue = (setIndex, condIndex) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        // Ensure additionalValues array exists
+        if (!newConditionSets[setIndex].conditions[condIndex].additionalValues) {
+            newConditionSets[setIndex].conditions[condIndex].additionalValues = [];
+        }
+
+        // Add a new empty value
+        newConditionSets[setIndex].conditions[condIndex].additionalValues.push('');
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
+    // Handle removing an additional value
+    const handleRemoveAdditionalValue = (setIndex, condIndex, valueIndex) => {
+        const newConditionSets = [...derivedMapping.conditionSets];
+
+        // Remove the value
+        newConditionSets[setIndex].conditions[condIndex].additionalValues.splice(valueIndex, 1);
+
+        setDerivedMapping({
+            ...derivedMapping,
+            conditionSets: newConditionSets
+        });
+    };
+
     // Handle mapped values functions...
     const handleAddMapping = () => {
         setMappedValues({
@@ -250,17 +302,31 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
         const newConditionSets = [...derivedMapping.conditionSets];
         newConditionSets[setIndex].conditions = [
             ...newConditionSets[setIndex].conditions,
-            { src: '', oper: 'EQUALS', value: '' }
+            { src: '', oper: 'EQUALS', value: '', additionalValues: [] }
         ];
         setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
     };
 
     const handleConditionChange = (setIndex, condIndex, field, value) => {
         const newConditionSets = [...derivedMapping.conditionSets];
-        newConditionSets[setIndex].conditions[condIndex] = {
-            ...newConditionSets[setIndex].conditions[condIndex],
-            [field]: value
+
+        // Create a copy of the condition to avoid mutating the original
+        const updatedCondition = {
+            ...newConditionSets[setIndex].conditions[condIndex]
         };
+
+        // Update the specified field
+        updatedCondition[field] = value;
+
+        // Make sure we preserve additionalValues when updating other fields
+        if (!updatedCondition.additionalValues &&
+            newConditionSets[setIndex].conditions[condIndex].additionalValues) {
+            updatedCondition.additionalValues =
+                [...newConditionSets[setIndex].conditions[condIndex].additionalValues];
+        }
+
+        // Update the condition in the set
+        newConditionSets[setIndex].conditions[condIndex] = updatedCondition;
 
         // If in SOURCE mode and changing src field, also update result value to match
         if (newConditionSets[setIndex].outputFormat === 'SOURCE' && field === 'src') {
@@ -584,19 +650,73 @@ const MappingTableDialog = ({ isOpen, onClose, mappingType, initialData, onSave 
                                                     <option value="ENDS_WITH">ENDS WITH</option>
                                                     <option value="MATCHES">MATCHES</option>
                                                 </select>
-                                                <input
-                                                    type="text"
-                                                    value={condition.value}
-                                                    onChange={(e) => handleConditionChange(setIndex, condIndex, 'value', e.target.value)}
-                                                    className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                                                    placeholder="Value"
-                                                />
+
+                                                <div className="flex flex-col flex-1">
+                                                    <div className="flex">
+                                                        <input
+                                                            type="text"
+                                                            value={condition.value}
+                                                            onChange={(e) => handleConditionChange(setIndex, condIndex, 'value', e.target.value)}
+                                                            className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                                                            placeholder="Value"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const key = `${setIndex}-${condIndex}`;
+                                                                setMultipleValuesOpen({
+                                                                    ...multipleValuesOpen,
+                                                                    [key]: !multipleValuesOpen[key]
+                                                                });
+                                                            }}
+                                                            className="ml-2 p-2 bg-gray-100 rounded hover:bg-gray-200 text-gray-600"
+                                                            title="Multiple values"
+                                                        >
+                                                            <i className={`fas fa-${multipleValuesOpen[`${setIndex}-${condIndex}`] ? 'minus' : 'plus'}-circle`}></i>
+                                                        </button>
+                                                    </div>
+
+                                                    {multipleValuesOpen[`${setIndex}-${condIndex}`] && (
+                                                        <div className="mt-2 ml-4 border-l-2 border-blue-300 pl-2">
+                                                            <div className="text-sm text-gray-600 mb-1">Additional Values:</div>
+
+                                                            {condition.additionalValues && condition.additionalValues.map((value, valueIndex) => (
+                                                                <div key={valueIndex} className="flex items-center mb-1">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={value}
+                                                                        onChange={(e) => handleAdditionalValueChange(setIndex, condIndex, valueIndex, e.target.value)}
+                                                                        className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                                                                        placeholder={`Value ${valueIndex + 2}`}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveAdditionalValue(setIndex, condIndex, valueIndex)}
+                                                                        className="ml-1 text-red-500 hover:text-red-700"
+                                                                    >
+                                                                        <i className="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleAddAdditionalValue(setIndex, condIndex)}
+                                                                className="mt-1 px-2 py-1 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                                                            >
+                                                                <i className="fas fa-plus mr-1"></i>
+                                                                Add Value
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
                                                 <button
-                                                    onClick={() => handleRemoveCondition(setIndex, condIndex)}
-                                                    className="text-red-600 hover:text-red-800"
-                                                >
-                                                    <i className="fas fa-trash"></i>
-                                                </button>
+    onClick={() => handleRemoveCondition(setIndex, condIndex)}
+    className="text-red-600 hover:text-red-800"
+>
+    <i className="fas fa-trash"></i>
+</button>
                                             </div>
                                         ))
                                     )}

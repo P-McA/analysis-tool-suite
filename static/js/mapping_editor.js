@@ -189,16 +189,62 @@ function resetMappingTypeData(mapping, newType) {
     mapping.source = '';
     mapping.derivedMapping = null;
     mapping.mappedValues = null;
+    if (!['PASSED_THROUGH', 'DEFAULTED'].includes(mapping.mappingType) &&
+        !['PASSED_THROUGH', 'DEFAULTED'].includes(newType)) {
+        mapping.source = '';
+    }
+let savedConditions = null;
+    if (mapping.derivedMapping && mapping.derivedMapping.conditions) {
+        savedConditions = mapping.derivedMapping.conditions.map(cond => ({
+            ...cond,
+            additionalValues: cond.additionalValues || []
+        }));
+    }
+
+    mapping.derivedMapping = null;
+    mapping.mappedValues = null;
 
     switch (newType) {
         case 'DERIVED':
-            mapping.derivedMapping = { conditions: [], value: '' };
+            mapping.derivedMapping = {
+                conditions: savedConditions || [],
+                value: ''
+            };
             break;
         case 'MAPPED':
             mapping.mappedValues = { src: '', mappings: [] };
             break;
+        case 'DEFAULTED':
+            // Ensure source is initialized for DEFAULTED even if empty
+            if (mapping.source === undefined) {
+                mapping.source = '';
+            }
+            break;
     }
 }
+const handleConditionChange = (setIndex, condIndex, field, value) => {
+    const newConditionSets = [...derivedMapping.conditionSets];
+
+    // Create a deep copy of the condition to avoid mutating the original
+    const updatedCondition = {
+        ...newConditionSets[setIndex].conditions[condIndex],
+        // Preserve additionalValues by default with a proper deep copy
+        additionalValues: [...(newConditionSets[setIndex].conditions[condIndex].additionalValues || [])]
+    };
+
+    // Update the specified field
+    updatedCondition[field] = value;
+
+    // Update the condition in the set
+    newConditionSets[setIndex].conditions[condIndex] = updatedCondition;
+
+    // If in SOURCE mode and changing src field, also update result value to match
+    if (newConditionSets[setIndex].outputFormat === 'SOURCE' && field === 'src') {
+        newConditionSets[setIndex].value = value;
+    }
+
+    setDerivedMapping({ ...derivedMapping, conditionSets: newConditionSets });
+};
 function debugDerivedMapping(fieldNode, mapping) {
     console.log("DEBUG: Derived Mapping Extraction");
     console.log("------------------------------");
@@ -349,10 +395,15 @@ function extractDerivedMapping(fieldNode) {
                 const conditions = [];
                 const condNodes = andNode.getElementsByTagName('cond');
                 Array.from(condNodes).forEach(condNode => {
+                    // Get all value tags for this condition
+                    const valueNodes = condNode.getElementsByTagName('value');
+                    const values = Array.from(valueNodes).map(node => node.textContent);
+
                     conditions.push({
                         src: condNode.getElementsByTagName('src')[0]?.textContent || '',
                         oper: condNode.getElementsByTagName('oper')[0]?.textContent || 'EQUALS',
-                        value: condNode.getElementsByTagName('value')[0]?.textContent || ''
+                        value: values[0] || '', // Keep the first value in the main value field for compatibility
+                        additionalValues: values.slice(1) // Store additional values in a new array
                     });
                 });
 
@@ -443,7 +494,7 @@ function extractDerivedMapping(fieldNode) {
                 mapping.conditions = [...mapping.conditions, ...conditions];
 
                 // Add to condition sets (new format)
-                mapping.conditionSets.push({
+                    mapping.conditionSets.push({
                     conditions: conditions,
                     value: resultValue,
                     outputFormat: outputFormat,
@@ -692,6 +743,7 @@ function extractMappingData(xmlDoc, comments) {
 
         switch (mapping.mappingType) {
             case 'PASSED_THROUGH':
+            case 'DEFAULTED':
                 const srcNode = fieldNode.getElementsByTagName('src')[0];
                 mapping.source = srcNode ? srcNode.textContent : '';
                 break;
@@ -898,7 +950,8 @@ function generateMappingXml(mapping) {
 
     switch (mapping.mappingType) {
         case 'PASSED_THROUGH':
-            if (mapping.source) {
+        case 'DEFAULTED': // Add DEFAULTED to handle source tags
+            if (mapping.source !== undefined) { // Check if source exists, even if it's empty
                 xml += `    <src>${escapeXml(mapping.source)}</src>\n`;
             }
             break;
@@ -971,8 +1024,8 @@ function generateDerivedXml(derivedMapping) {
 
             // Generate if nodes for each condition set
             let isFirstConditionSet = true;
-            derivedMapping.conditionSets.forEach(conditionSet => {
-                if (conditionSet.conditions.length > 0) {
+        derivedMapping.conditionSets.forEach(conditionSet => {
+            if (conditionSet.conditions.length > 0) {
                     // Use <if> for the first condition set, <else-if> for the rest
                     if (isFirstConditionSet) {
                         xml += '      <if>\n';
@@ -1004,15 +1057,25 @@ function generateDerivedXml(derivedMapping) {
                     xml += '        <and>\n';
 
                     // Generate condition nodes
-                    conditionSet.conditions.forEach(condition => {
-                        xml += '          <cond>\n';
-                        xml += `            <src>${escapeXml(condition.src)}</src>\n`;
-                        xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
-                        xml += `            <value>${escapeXml(condition.value)}</value>\n`;
-                        xml += '          </cond>\n';
-                    });
+                conditionSet.conditions.forEach(condition => {
+                    xml += '          <cond>\n';
+                    xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                    xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
 
-                    xml += '        </and>\n';
+                    // Output the primary value
+                    xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+                    // Output any additional values
+                    if (condition.additionalValues && condition.additionalValues.length > 0) {
+                        condition.additionalValues.forEach(val => {
+                            xml += `            <value>${escapeXml(val)}</value>\n`;
+                        });
+                    }
+
+                    xml += '          </cond>\n';
+                });
+
+                xml += '        </and>\n';
 
                     // Add the result using either <src> or <value> tag based on the outputFormat
                     const isSourceFormat = conditionSet.outputFormat === 'SOURCE';
@@ -1025,7 +1088,7 @@ function generateDerivedXml(derivedMapping) {
                     }
 
                     // Use correct closing tag based on whether this is an if or else-if
-                    if (!isFirstConditionSet) {
+                    if (isFirstConditionSet) {
                         xml += '      </if>\n';
                     } else {
                         xml += '      </else-if>\n';
@@ -1112,6 +1175,10 @@ function generateDerivedXml(derivedMapping) {
                                     xml += `            <value>${escapeXml(condition.value)}</value>\n`;
                                 } else if (condition.src === condition.value) {
                                     xml += `            <src>${escapeXml(condition.src)}</src>\n`;
+                                }else  if (condition.additionalValues && condition.additionalValues.length > 0) {
+                                    condition.additionalValues.forEach(val => {
+                                        xml += `            <value>${escapeXml(val)}</value>\n`;
+                                    });
                                 }
 
                                 xml += '          </cond>\n';
@@ -1125,6 +1192,11 @@ function generateDerivedXml(derivedMapping) {
                             xml += `            <src>${escapeXml(condition.src)}</src>\n`;
                             xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
                             xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+                              if (condition.additionalValues && condition.additionalValues.length > 0) {
+        condition.additionalValues.forEach(val => {
+            xml += `            <value>${escapeXml(val)}</value>\n`;
+        });
+    }
                             xml += '          </cond>\n';
                         });
                         xml += '        </and>\n';
@@ -1194,6 +1266,14 @@ function generateDerivedXml(derivedMapping) {
             xml += `            <src>${escapeXml(condition.src)}</src>\n`;
             xml += `            <oper>${escapeXml(condition.oper)}</oper>\n`;
             xml += `            <value>${escapeXml(condition.value)}</value>\n`;
+
+            // Output any additional values
+            if (condition.additionalValues && condition.additionalValues.length > 0) {
+                condition.additionalValues.forEach(val => {
+                    xml += `            <value>${escapeXml(val)}</value>\n`;
+                });
+            }
+
             xml += '          </cond>\n';
         });
 
