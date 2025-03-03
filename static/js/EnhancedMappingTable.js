@@ -1,8 +1,14 @@
-// EnhancedMappingTable.js with Tickets column added back
+// EnhancedMappingTable.js with performance optimizations and render cycle fixes
 const EnhancedMappingTable = () => {
     const [sortField, setSortField] = React.useState('fieldName');
     const [sortDirection, setSortDirection] = React.useState('asc');
     const [updateTimestamp, setUpdateTimestamp] = React.useState(Date.now());
+
+    // Reference to track if we're in the middle of an update
+    const isUpdating = React.useRef(false);
+
+    // Keep a local copy of mappings to avoid frequent calls to window.getCurrentMapping
+    const [localMappings, setLocalMappings] = React.useState([]);
 
     // Filter state
     const [filterPopoverOpen, setFilterPopoverOpen] = React.useState(null);
@@ -20,48 +26,103 @@ const EnhancedMappingTable = () => {
         status: ['GOOD', 'BAD', 'PENDING']
     });
 
-    // Register force update function
+    // Safely get current mappings and update local state
+    const refreshMappings = React.useCallback(() => {
+        try {
+            if (isUpdating.current) return; // Prevent recursive updates
+
+            isUpdating.current = true;
+            const currentMappings = window.getCurrentMapping?.() || [];
+
+            // Only update if mappings have actually changed
+            // This performs a shallow comparison to prevent unnecessary rerenders
+            const shouldUpdate = !areMappingsEqual(localMappings, currentMappings);
+
+            if (shouldUpdate) {
+                console.log("Updating local mappings");
+                setLocalMappings(currentMappings);
+            }
+
+            isUpdating.current = false;
+        } catch (error) {
+            console.error("Error refreshing mappings:", error);
+            isUpdating.current = false;
+        }
+    }, [localMappings]);
+
+    // Compare mappings arrays to prevent unnecessary updates
+    const areMappingsEqual = (mappingsA, mappingsB) => {
+        if (!mappingsA || !mappingsB) return false;
+        if (mappingsA.length !== mappingsB.length) return false;
+
+        // Simple length check is often enough, but we could do deeper comparison if needed
+        return true;
+    };
+
+    // Safe wrapper for forceUpdate that prevents update loops
+    const safeForceUpdate = React.useCallback((timestamp) => {
+        if (isUpdating.current) return; // Prevent recursive updates
+
+        if (!timestamp || timestamp === updateTimestamp) return;
+
+        isUpdating.current = true;
+        setUpdateTimestamp(timestamp);
+        refreshMappings();
+        isUpdating.current = false;
+    }, [updateTimestamp, refreshMappings]);
+
+    // Register force update function - with dependencies array to prevent constant recreation
     React.useEffect(() => {
         console.log("Registering forceUpdate in EnhancedMappingTable");
+
         if (window.setForceUpdate) {
-            window.setForceUpdate(setUpdateTimestamp);
+            window.setForceUpdate(safeForceUpdate);
         }
+
+        // Initial load of mappings
+        refreshMappings();
+
         return () => {
             console.log("Cleaning up forceUpdate");
             if (window.setForceUpdate) {
                 window.setForceUpdate(null);
             }
         };
-    }, []);
+    }, [safeForceUpdate, refreshMappings]);
 
-    // Get current mappings
-    const mappings = window.getCurrentMapping?.() || [];
-    console.log("Mappings fetched in EnhancedMappingTable:", mappings);
-
-    // Update filter options when mappings change
+    // Update filter options when mappings change - but only extract field names once per mapping set
     React.useEffect(() => {
         // Extract unique field names for filter options
-        const fieldNames = [...new Set(mappings.map(m => m.fieldName))].filter(Boolean).sort();
+        const fieldNames = [...new Set(localMappings.map(m => m.fieldName))]
+            .filter(Boolean)
+            .sort();
+
         setFilterOptions(prev => ({
             ...prev,
             fieldName: fieldNames
         }));
-    }, [mappings]);
+    }, [localMappings]);
 
     // Function to check if a mapping is newly added (within the last 5 seconds)
-    const isNewlyAdded = (mapping) => {
-        if (!mapping.fieldName) return false;
+    const isNewlyAdded = React.useCallback((mapping) => {
+        if (!mapping || !mapping.fieldName) return false;
         const matches = mapping.fieldName.match(/NewField_(\d+)/);
         if (!matches || matches.length < 2) return false;
 
         const timestamp = parseInt(matches[1], 10);
         const now = Date.now();
         return now - timestamp < 5000; // 5 seconds threshold
-    };
+    }, []);
 
     // Apply filters to mappings but always include newly added rows
+    // Wrapped in useMemo to prevent recalculation on every render
     const filteredMappings = React.useMemo(() => {
-        let result = [...mappings];
+        if (!localMappings || !Array.isArray(localMappings)) {
+            console.warn("Invalid mappings data:", localMappings);
+            return [];
+        }
+
+        let result = [...localMappings];
 
         // Find any newly added mappings
         const newlyAddedMappings = result.filter(isNewlyAdded);
@@ -101,36 +162,49 @@ const EnhancedMappingTable = () => {
         const missingNewMappings = newlyAddedMappings.filter(m => !filteredIds.has(m.fieldName));
 
         return [...missingNewMappings, ...result];
-    }, [mappings, filters, updateTimestamp]);
+    }, [localMappings, filters, isNewlyAdded]);
 
     // Sort mappings based on current sort field and direction
     // But always keep newly added rows at the top
     const sortedMappings = React.useMemo(() => {
-        // Split mappings into new and existing
-        const newRows = filteredMappings.filter(isNewlyAdded);
-        const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
-
-        // Sort only the existing rows
-        const sortedExisting = [...existingRows].sort((a, b) => {
-            // If sortField is 'originalIndex', use that for sorting
-            if (sortField === 'originalIndex') {
-                return sortDirection === 'asc'
-                    ? (a.originalIndex || 0) - (b.originalIndex || 0)
-                    : (b.originalIndex || 0) - (a.originalIndex || 0);
+        try {
+            // Safety check
+            if (!filteredMappings || !Array.isArray(filteredMappings)) {
+                return [];
             }
 
-            // Otherwise use regular string/value comparison
-            let aValue = a[sortField] || '';
-            let bValue = b[sortField] || '';
-            if (typeof aValue === 'string') aValue = aValue.toLowerCase();
-            if (typeof bValue === 'string') bValue = bValue.toLowerCase();
-            const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-            return sortDirection === 'asc' ? comparison : -comparison;
-        });
+            // Split mappings into new and existing
+            const newRows = filteredMappings.filter(isNewlyAdded);
+            const existingRows = filteredMappings.filter(m => !isNewlyAdded(m));
 
-        // Combine with new rows at the top
-        return [...newRows, ...sortedExisting];
-    }, [filteredMappings, sortField, sortDirection, updateTimestamp]);
+            // Sort only the existing rows
+            const sortedExisting = [...existingRows].sort((a, b) => {
+                // Safely access properties, handling undefined values
+                if (!a || !b) return 0;
+
+                // If sortField is 'originalIndex', use that for sorting
+                if (sortField === 'originalIndex') {
+                    return sortDirection === 'asc'
+                        ? (a.originalIndex || 0) - (b.originalIndex || 0)
+                        : (b.originalIndex || 0) - (a.originalIndex || 0);
+                }
+
+                // Otherwise use regular string/value comparison
+                let aValue = a[sortField] || '';
+                let bValue = b[sortField] || '';
+                if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+                if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+                const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+                return sortDirection === 'asc' ? comparison : -comparison;
+            });
+
+            // Combine with new rows at the top
+            return [...newRows, ...sortedExisting];
+        } catch (error) {
+            console.error("Error sorting mappings:", error);
+            return filteredMappings || [];
+        }
+    }, [filteredMappings, sortField, sortDirection, isNewlyAdded]);
 
     const handleSort = (field) => {
         console.log("Sorting by field:", field);
@@ -167,21 +241,36 @@ const EnhancedMappingTable = () => {
         });
     };
 
+    // Safe deleteClick handler with error catching
     const handleDeleteClick = (index) => {
         console.log("Delete clicked for index:", index);
-        if (typeof window.handleMappingDelete === 'function') {
-            window.handleMappingDelete(index);
+        try {
+            if (typeof window.handleMappingDelete === 'function') {
+                window.handleMappingDelete(index);
+            } else {
+                console.warn("handleMappingDelete function not available");
+            }
+        } catch (error) {
+            console.error("Error during delete operation:", error);
         }
     };
 
+    // Safe inputChange handler with error catching
     const handleInputChange = (index, field, value) => {
         console.log("Input change:", { index, field, value });
-        if (typeof window.handleMappingUpdate === 'function') {
-            window.handleMappingUpdate(index, field, value);
+        try {
+            if (typeof window.handleMappingUpdate === 'function') {
+                window.handleMappingUpdate(index, field, value);
+            } else {
+                console.warn("handleMappingUpdate function not available");
+            }
+        } catch (error) {
+            console.error("Error updating mapping:", error);
         }
     };
+
     const renderMappedValuesGrid = (mapping) => {
-        if (!mapping.mappedValues?.mappings?.length) return null;
+        if (!mapping || !mapping.mappedValues?.mappings?.length) return null;
 
         return (
             <div className="mt-2 bg-gray-50 p-2 rounded">
@@ -196,7 +285,7 @@ const EnhancedMappingTable = () => {
                         {mapping.mappedValues.mappings.map((map, idx) => (
                             <tr key={idx}>
                                 <td className="px-3 py-2 text-sm">{map.from}</td>
-                                <td className="px-3 py-2 text-sm">{map.to}</td>
+                                <td className="px-3 py-2 text-sm">{Array.isArray(map.to) ? map.to.join(', ') : map.to}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -206,52 +295,79 @@ const EnhancedMappingTable = () => {
     };
 
     const renderSourceCell = (mapping, index) => {
-        switch (mapping.mappingType) {
-            case 'PASSED_THROUGH':
-            case 'DEFAULTED':
-                return (
-                    <input
-                        type="text"
-                        value={mapping.source || ''}
-                        onChange={(e) => handleInputChange(index, 'source', e.target.value)}
-                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter source field"
-                    />
-                );
-            case 'MAPPED':
-                return (
-                    <div>
-                        <div className="flex items-center mb-2">
-                            <span className="text-sm text-gray-600">
-                                Mappings ({mapping.mappedValues?.mappings?.length || 0})
-                            </span>
-                            <button
-                                onClick={() => window.showMappedDialog?.(mapping, index)}
-                                className="ml-2 px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
-                            >
-                                Edit
-                            </button>
+        if (!mapping) return <span className="text-gray-500">Invalid mapping</span>;
+
+        try {
+            switch (mapping.mappingType) {
+                case 'PASSED_THROUGH':
+                case 'DEFAULTED':
+                    return (
+                        <input
+                            type="text"
+                            value={mapping.source || ''}
+                            onChange={(e) => handleInputChange(index, 'source', e.target.value)}
+                            className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="Enter source field"
+                        />
+                    );
+                case 'MAPPED':
+                    return (
+                        <div>
+                            <div className="flex items-center mb-2">
+                                <span className="text-sm text-gray-600">
+                                    Mappings ({mapping.mappedValues?.mappings?.length || 0})
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            if (typeof window.showMappedDialog === 'function') {
+                                                window.showMappedDialog(mapping, index);
+                                            } else {
+                                                console.warn("showMappedDialog function not available");
+                                            }
+                                        } catch (error) {
+                                            console.error("Error opening mapped dialog:", error);
+                                        }
+                                    }}
+                                    className="ml-2 px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+                                >
+                                    Edit
+                                </button>
+                            </div>
+                            {renderMappedValuesGrid(mapping)}
                         </div>
-                        {renderMappedValuesGrid(mapping)}
-                    </div>
-                );
-            case 'DERIVED':
-                return (
-                    <button
-                        onClick={() => window.showDerivedMappingDialog?.(mapping, index)}
-                        className="w-full px-4 py-2 text-left bg-gray-50 hover:bg-gray-100 rounded border"
-                    >
-                        <i className="fas fa-code mr-2"></i>
-                        Edit Logic
-                        {mapping.derivedMapping?.conditions?.length > 0 && (
-                            <span className="ml-2 text-xs text-gray-500">
-                                ({mapping.derivedMapping.conditions.length} conditions)
-                            </span>
-                        )}
-                    </button>
-                );
-            default:
-                return <span className="text-gray-500">N/A</span>;
+                    );
+                case 'DERIVED':
+                    return (
+                        <button
+                            onClick={() => {
+                                try {
+                                    if (typeof window.showDerivedMappingDialog === 'function') {
+                                        window.showDerivedMappingDialog(mapping, index);
+                                    } else {
+                                        console.warn("showDerivedMappingDialog function not available");
+                                    }
+                                } catch (error) {
+                                    console.error("Error opening derived dialog:", error);
+                                }
+                            }}
+                            className="w-full px-4 py-2 text-left bg-gray-50 hover:bg-gray-100 rounded border"
+                        >
+                            <i className="fas fa-code mr-2"></i>
+                            Edit Logic
+                            {mapping.derivedMapping?.conditions?.length > 0 && (
+                                <span className="ml-2 text-xs text-gray-500">
+                                    ({mapping.derivedMapping.conditions.length} conditions)
+                                </span>
+                            )}
+                        </button>
+                    );
+                default:
+                    return <span className="text-gray-500">N/A</span>;
+            }
+        } catch (error) {
+            console.error("Error rendering source cell:", error);
+            return <span className="text-red-500">Error rendering content</span>;
         }
     };
 
@@ -400,72 +516,95 @@ const EnhancedMappingTable = () => {
 
     // Render a row with highlight if it's newly added
     const renderRow = (mapping, index, originalIndex) => {
-        const isNew = isNewlyAdded(mapping);
+        try {
+            if (!mapping) return null;
 
-        return (
-            <tr key={index} className={`hover:bg-gray-50 ${isNew ? 'bg-blue-50' : ''}`}>
-                <td className="px-6 py-4">
-                    <input
-                        type="text"
-                        value={mapping.fieldName || ''}
-                        onChange={(e) => handleInputChange(originalIndex, 'fieldName', e.target.value)}
-                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                    />
-                </td>
-                <td className="px-6 py-4">
-                    {renderSourceCell(mapping, originalIndex)}
-                </td>
-                <td className="px-6 py-4">
-                    <select
-                        value={mapping.mappingType || 'NONE'}
-                        onChange={(e) => handleInputChange(originalIndex, 'mappingType', e.target.value)}
-                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                    >
-                        {filterOptions.mappingType.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                        ))}
-                    </select>
-                </td>
-                <td className="px-6 py-4">
-                    {/* Notes column */}
-                    <input
-                        type="text"
-                        value={mapping.notes || ''}
-                        onChange={(e) => handleInputChange(originalIndex, 'notes', e.target.value)}
-                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                        placeholder="Notes..."
-                    />
-                </td>
-                <td className="px-6 py-4">
-                    {/* Tickets column with tag input */}
-                    <TicketTagsInput
-                        tickets={mapping.tickets || ''}
-                        onChange={handleInputChange}
-                        index={originalIndex}
-                    />
-                </td>
-                <td className="px-6 py-4">
-                    <select
-                        value={mapping.status || 'GOOD'}
-                        onChange={(e) => handleInputChange(originalIndex, 'status', e.target.value)}
-                        className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
-                    >
-                        {filterOptions.status.map(status => (
-                            <option key={status} value={status}>{status}</option>
-                        ))}
-                    </select>
-                </td>
-                <td className="px-6 py-4 text-center">
-                    <button
-                        onClick={() => handleDeleteClick(originalIndex)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete mapping"
-                    >
-                        <i className="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-        );
+            const isNew = isNewlyAdded(mapping);
+
+            return (
+                <tr key={index} className={`hover:bg-gray-50 ${isNew ? 'bg-blue-50' : ''}`}>
+                    <td className="px-6 py-4">
+                        <input
+                            type="text"
+                            value={mapping.fieldName || ''}
+                            onChange={(e) => handleInputChange(originalIndex, 'fieldName', e.target.value)}
+                            className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                        />
+                    </td>
+                    <td className="px-6 py-4">
+                        {renderSourceCell(mapping, originalIndex)}
+                    </td>
+                    <td className="px-6 py-4">
+                        <select
+                            value={mapping.mappingType || 'NONE'}
+                            onChange={(e) => handleInputChange(originalIndex, 'mappingType', e.target.value)}
+                            className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                        >
+                            {filterOptions.mappingType.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                            ))}
+                        </select>
+                    </td>
+                    <td className="px-6 py-4">
+                        {/* Notes column */}
+                        <input
+                            type="text"
+                            value={mapping.notes || ''}
+                            onChange={(e) => handleInputChange(originalIndex, 'notes', e.target.value)}
+                            className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                            placeholder="Notes..."
+                        />
+                    </td>
+                    <td className="px-6 py-4">
+                        {/* Tickets column - ensure TicketTagsInput is defined */}
+                        {window.TicketTagsInput ? (
+                            <TicketTagsInput
+                                tickets={mapping.tickets || ''}
+                                onChange={handleInputChange}
+                                index={originalIndex}
+                            />
+                        ) : (
+                            <input
+                                type="text"
+                                value={mapping.tickets || ''}
+                                onChange={(e) => handleInputChange(originalIndex, 'tickets', e.target.value)}
+                                className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                                placeholder="Tickets..."
+                            />
+                        )}
+                    </td>
+                    <td className="px-6 py-4">
+                        <select
+                            value={mapping.status || 'GOOD'}
+                            onChange={(e) => handleInputChange(originalIndex, 'status', e.target.value)}
+                            className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${isNew ? 'border-blue-300' : ''}`}
+                        >
+                            {filterOptions.status.map(status => (
+                                <option key={status} value={status}>{status}</option>
+                            ))}
+                        </select>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                        <button
+                            onClick={() => handleDeleteClick(originalIndex)}
+                            className="text-red-600 hover:text-red-800"
+                            title="Delete mapping"
+                        >
+                            <i className="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            );
+        } catch (error) {
+            console.error("Error rendering row:", error, mapping);
+            return (
+                <tr key={index} className="bg-red-50">
+                    <td colSpan="7" className="px-6 py-4 text-center text-red-600">
+                        Error rendering row: {error.message}
+                    </td>
+                </tr>
+            );
+        }
     };
 
     return (
@@ -473,7 +612,7 @@ const EnhancedMappingTable = () => {
             {/* Filter status and clear button */}
             <div className="flex justify-between items-center p-4 bg-gray-50 border-b">
                 <div className="text-sm text-gray-500">
-                    {sortedMappings.length} of {mappings.length} records shown
+                    {sortedMappings.length} of {localMappings.length} records shown
                 </div>
                 {(filters.fieldName.length > 0 || filters.mappingType || filters.status || filters.tickets) && (
                     <button
@@ -642,8 +781,12 @@ const EnhancedMappingTable = () => {
                             </tr>
                         ) : (
                             sortedMappings.map((mapping, index) => {
-                                const originalIndex = mappings.findIndex(m => m === mapping);
-                                return renderRow(mapping, index, originalIndex);
+                                // Find the original index safely
+                                const originalIndex = Array.isArray(localMappings)
+                                    ? localMappings.findIndex(m => m === mapping)
+                                    : -1;
+
+                                return renderRow(mapping, index, originalIndex >= 0 ? originalIndex : index);
                             })
                         )}
                     </tbody>
@@ -652,6 +795,22 @@ const EnhancedMappingTable = () => {
         </div>
     );
 };
+
+// Fix missing TicketTagsInput component if not defined elsewhere
+if (!window.TicketTagsInput) {
+    // Simple fallback implementation
+    window.TicketTagsInput = ({ tickets, onChange, index }) => {
+        return (
+            <input
+                type="text"
+                value={tickets || ''}
+                onChange={(e) => onChange(index, 'tickets', e.target.value)}
+                className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter ticket IDs..."
+            />
+        );
+    };
+}
 
 // Make the component available globally
 window.EnhancedMappingTable = EnhancedMappingTable;

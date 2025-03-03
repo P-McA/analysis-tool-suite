@@ -20,26 +20,63 @@ const MAPPING_TYPES = [
     'NONE'
 ];
 
-// Set up force update function
+// Set up force update function with safety to prevent infinite loops
 function setForceUpdate(updateFunction) {
     console.log("Setting forceUpdate function");
-    forceUpdate = updateFunction;
+
+    // Wrap the update function in a safety wrapper to prevent infinite loops
+    if (typeof updateFunction === 'function') {
+        let lastUpdateTimestamp = 0;
+        forceUpdate = (timestamp) => {
+            // Only update if timestamp has changed and some time has passed
+            if (timestamp && timestamp !== lastUpdateTimestamp) {
+                lastUpdateTimestamp = timestamp;
+                updateFunction(timestamp);
+            }
+        };
+    } else {
+        forceUpdate = updateFunction;
+    }
 }
 
-// Update React components
+// Track update calls to prevent infinite loops
+let lastUpdateTime = 0;
+const UPDATE_THROTTLE = 100; // ms
+
+// Update React components with throttling to prevent React maximum depth error
 function updateReactComponents() {
+    const now = Date.now();
+
+    // Throttle updates to prevent infinite loops
+    if (now - lastUpdateTime < UPDATE_THROTTLE) {
+        console.log("Throttling React component update");
+        return;
+    }
+
     console.log("Updating React components, currentMapping:", currentMapping);
+    lastUpdateTime = now;
+
+    // Create a safe copy of the mapping to avoid reference issues
+    const safeMappingCopy = currentMapping ?
+        JSON.parse(JSON.stringify(currentMapping)) : [];
+
     if (forceUpdate) {
         console.log("Calling forceUpdate");
-        forceUpdate(Date.now());
-    } else if (tableContainer && window.ReactDOM && window.EnhancedMappingTable) {
-        console.warn("forceUpdate not set, forcing re-render");
-        ReactDOM.render(
-            React.createElement(window.EnhancedMappingTable),
-            tableContainer
-        );
+        // Use setTimeout to break the potential update cycle
+        setTimeout(() => {
+            forceUpdate(now);
+        }, 0);
     } else {
-        console.error("Cannot update components: missing dependencies or tableContainer");
+        const tableContainer = document.getElementById('mappingTableContainer');
+        if (tableContainer && window.ReactDOM && window.EnhancedMappingTable) {
+            console.warn("forceUpdate not set, forcing re-render");
+            ReactDOM.render(
+                React.createElement(window.EnhancedMappingTable),
+                tableContainer
+            );
+        } else {
+            console.error("Cannot update components: missing dependencies or tableContainer");
+        }
     }
 }
 
@@ -296,24 +333,88 @@ function debugMappingDialogValues(data) {
     console.log("------------------------------");
     console.log("Initial data:", data);
 
-    if (data.conditionSets && data.conditionSets.length > 0) {
+    if (data && data.conditionSets && data.conditionSets.length > 0) {
         data.conditionSets.forEach((set, index) => {
             console.log(`Condition Set ${index+1}:`);
-            console.log("- Conditions:", set.conditions);
+            console.log("- Conditions:", Array.isArray(set.conditions) ? set.conditions : "NOT AN ARRAY");
             console.log("- Result Value:", set.value);
             console.log("- Output Format:", set.outputFormat);
+
+            // Check for potential issues
+            if (!Array.isArray(set.conditions)) {
+                console.warn(`ISSUE: Condition set ${index+1} has non-array conditions:`, set.conditions);
+            }
+        });
+    } else {
+        console.log("No condition sets found or data is invalid");
+    }
+
+    console.log("Main value:", data?.value);
+    console.log("------------------------------");
+
+    // Return a safe version of the data with arrays properly initialized
+    return safeInitializeData(data);
+}
+
+// Helper function to ensure all data properties are properly initialized
+function safeInitializeData(data) {
+    if (!data) return {
+        conditions: [],
+        value: '',
+        conditionSets: [{
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }],
+        specialTags: []
+    };
+
+    // Create a deep copy to avoid reference issues
+    const safeCopy = JSON.parse(JSON.stringify(data));
+
+    // Ensure conditions is an array
+    if (!Array.isArray(safeCopy.conditions)) {
+        safeCopy.conditions = [];
+    }
+
+    // Ensure specialTags is an array
+    if (!Array.isArray(safeCopy.specialTags)) {
+        safeCopy.specialTags = [];
+    }
+
+    // Ensure conditionSets is an array and each set has proper fields
+    if (!Array.isArray(safeCopy.conditionSets)) {
+        safeCopy.conditionSets = [{
+            conditions: [],
+            value: safeCopy.value || '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }];
+    } else {
+        // Validate each condition set
+        safeCopy.conditionSets.forEach(set => {
+            if (!Array.isArray(set.conditions)) {
+                set.conditions = [];
+            }
+            if (!Array.isArray(set.specialTags)) {
+                set.specialTags = [];
+            }
         });
     }
 
-    console.log("Main value:", data.value);
-    console.log("------------------------------");
+    return safeCopy;
 }
 
 // Make these functions available globally
 window.handleAddRow = handleAddRow;
 window.handleMappingDelete = handleMappingDelete;
 window.handleMappingUpdate = handleMappingUpdate;
-window.getCurrentMapping = () => currentMapping || [];
+window.getCurrentMapping = () => {
+    // Always return a safe copy to prevent reference issues
+    return currentMapping ?
+        JSON.parse(JSON.stringify(currentMapping)) : [];
+};
 
 // Helper functions for condition processing
 function isInsideCondition(node) {
@@ -345,11 +446,34 @@ function processCondNode(condNode) {
 
 function processConditionSet(parentNode, andNode) {
     const conditions = [];
-    const condNodes = andNode.getElementsByTagName('cond');
+
+    // Safety check for null andNode
+    if (!andNode) {
+        console.warn("processConditionSet: andNode is null or undefined");
+        return {
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        };
+    }
+
+    // Safety check for getElementsByTagName
+    let condNodes;
+    try {
+        condNodes = andNode.getElementsByTagName('cond');
+    } catch (error) {
+        console.error("Error getting cond nodes:", error);
+        condNodes = [];
+    }
 
     // Process each condition node
-    Array.from(condNodes).forEach(condNode => {
-        conditions.push(processCondNode(condNode));
+    Array.from(condNodes || []).forEach(condNode => {
+        try {
+            conditions.push(processCondNode(condNode));
+        } catch (error) {
+            console.error("Error processing condition node:", error);
+        }
     });
 
     // Get result value (source or value tag)
@@ -503,12 +627,29 @@ function extractSpecialTags(node, excludeChildren = false) {
 function extractDerivedMapping(fieldNode) {
     console.log("Extracting derived mapping");
 
+    // Initialize with proper default structure to avoid null/undefined issues
     const mapping = {
         conditions: [],
         value: '',
         conditionSets: [], // New structure for enhanced support
         specialTags: []    // Array to store NVL/REF tags
     };
+
+    // Safety check - if fieldNode is null/undefined, return default structure
+    if (!fieldNode) {
+        console.warn("extractDerivedMapping: fieldNode is null or undefined");
+        return {
+            conditions: [],
+            value: '',
+            conditionSets: [{
+                conditions: [],
+                value: '',
+                outputFormat: 'VALUE',
+                specialTags: []
+            }],
+            specialTags: []
+        };
+    }
 
     // First, check for direct NVL tags (outside ifelse) - These are standalone NVL tags
     const nvlNodes = fieldNode.getElementsByTagName('nvl');
@@ -755,6 +896,28 @@ function extractDerivedMapping(fieldNode) {
         });
     }
 
+    // Before returning, ensure all conditionSets have valid conditions arrays
+    // This fixes the "conditionSet.conditions is not iterable" error
+    if (mapping.conditionSets && mapping.conditionSets.length > 0) {
+        mapping.conditionSets.forEach(set => {
+            if (!set.conditions) {
+                set.conditions = [];
+            } else if (!Array.isArray(set.conditions)) {
+                console.warn("Non-array conditions found, converting to array", set.conditions);
+                set.conditions = [];
+            }
+
+            // Also ensure any OR condition structures have valid condition arrays
+            if (set.orStructure && set.orConditions) {
+                set.orConditions.forEach(orCond => {
+                    if (orCond.type === 'AND' && !Array.isArray(orCond.conditions)) {
+                        orCond.conditions = [];
+                    }
+                });
+            }
+        });
+    }
+
     // If we can't identify a format, return a default structure
     if (mapping.conditionSets.length === 0) {
         return {
@@ -771,7 +934,24 @@ function extractDerivedMapping(fieldNode) {
         };
     }
 
-    return debugDerivedMapping(fieldNode, mapping);
+    try {
+        return debugDerivedMapping(fieldNode, mapping);
+    } catch (error) {
+        console.error("Error in debugDerivedMapping:", error);
+        // Return a safe fallback if debug fails
+        return {
+            conditions: [],
+            value: '',
+            conditionSets: [{
+                conditions: [],
+                value: '',
+                outputFormat: 'VALUE',
+                specialTags: []
+            }],
+            specialTags: mapping.specialTags || [],
+            directSrc: mapping.directSrc
+        };
+    }
 }
 
 // Extract MAPPED mapping data - UPDATED
@@ -1791,7 +1971,7 @@ function showMappedDialog(mapping, index) {
     );
 }
 
-// Show derived mapping dialog
+// Show derived mapping dialog with safety checks
 function showDerivedMappingDialog(mapping, index) {
     console.log("Opening derived dialog for index:", index);
     const dialogRoot = document.getElementById('mappingTableDialogRoot');
@@ -1800,28 +1980,110 @@ function showDerivedMappingDialog(mapping, index) {
         return;
     }
 
-    const derivedData = mapping.derivedMapping || {
+    // Prepare safe default derived data
+    const safeDefault = {
         conditions: [],
-        value: ''
+        value: '',
+        conditionSets: [{
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }],
+        specialTags: []
     };
 
-    ReactDOM.render(
-        React.createElement(window.MappingTableDialog, {
-            isOpen: true,
-            onClose: () => {
-                ReactDOM.unmountComponentAtNode(dialogRoot);
-            },
-            mappingType: 'DERIVED',
-            initialData: derivedData,
-            onSave: (newMapping) => {
-                console.log("Saving derived mapping:", newMapping);
-                currentMapping[index].derivedMapping = newMapping;
-                updateReactComponents();
-                ReactDOM.unmountComponentAtNode(dialogRoot);
-            }
-        }),
-        dialogRoot
-    );
+    // Use mapping.derivedMapping if it exists, otherwise use safe defaults
+    let derivedData;
+    try {
+        // Create a deep copy to avoid reference issues
+        derivedData = mapping.derivedMapping ?
+            JSON.parse(JSON.stringify(mapping.derivedMapping)) : safeDefault;
+
+        // Safety check for each property
+        if (!Array.isArray(derivedData.conditions)) {
+            derivedData.conditions = [];
+        }
+
+        if (!Array.isArray(derivedData.specialTags)) {
+            derivedData.specialTags = [];
+        }
+
+        if (!Array.isArray(derivedData.conditionSets)) {
+            derivedData.conditionSets = [{
+                conditions: [],
+                value: derivedData.value || '',
+                outputFormat: 'VALUE',
+                specialTags: []
+            }];
+        } else {
+            // Validate each condition set
+            derivedData.conditionSets.forEach(set => {
+                if (!Array.isArray(set.conditions)) {
+                    set.conditions = [];
+                }
+                if (!Array.isArray(set.specialTags)) {
+                    set.specialTags = [];
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error preparing derived data:", error);
+        derivedData = safeDefault;
+    }
+
+    // Debug the data before sending to dialog
+    console.log("Derived data prepared for dialog:", derivedData);
+
+    try {
+        ReactDOM.render(
+            React.createElement(window.MappingTableDialog, {
+                isOpen: true,
+                onClose: () => {
+                    ReactDOM.unmountComponentAtNode(dialogRoot);
+                },
+                mappingType: 'DERIVED',
+                initialData: derivedData,
+                onSave: (newMapping) => {
+                    console.log("Saving derived mapping:", newMapping);
+
+                    // Ensure arrays are properly initialized in the new mapping
+                    if (!Array.isArray(newMapping.conditions)) {
+                        newMapping.conditions = [];
+                    }
+
+                    if (!Array.isArray(newMapping.conditionSets)) {
+                        newMapping.conditionSets = [{
+                            conditions: [],
+                            value: newMapping.value || '',
+                            outputFormat: 'VALUE',
+                            specialTags: []
+                        }];
+                    } else {
+                        // Ensure each condition set has a valid conditions array
+                        newMapping.conditionSets.forEach(set => {
+                            if (!Array.isArray(set.conditions)) {
+                                set.conditions = [];
+                            }
+                        });
+                    }
+
+                    currentMapping[index].derivedMapping = newMapping;
+
+                    // Use setTimeout to prevent potential update loops
+                    setTimeout(() => {
+                        updateReactComponents();
+                    }, 0);
+
+                    ReactDOM.unmountComponentAtNode(dialogRoot);
+                }
+            }),
+            dialogRoot
+        );
+    } catch (error) {
+        console.error("Error rendering dialog:", error);
+        alert("There was an error opening the dialog. Please try again.");
+    }
 }
 
 // Handle saving changes
