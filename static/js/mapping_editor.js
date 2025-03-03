@@ -879,7 +879,13 @@ function extractComments(xmlString) {
 // Generate XML for a single mapping
 function generateMappingXml(mapping) {
     let xml = '  <field>\n';
-    xml += `    <dest>${escapeXml(mapping.fieldName)}</dest>\n`;
+
+    // Use the special dest generator for fields with attributes
+    if (mapping.fieldName && mapping.fieldName.includes('[')) {
+        xml += generateDestWithAttributes(mapping.fieldName);
+    } else {
+        xml += `    <dest>${escapeXml(mapping.fieldName)}</dest>\n`;
+    }
 
     // Preserve any comment that might exist in the original XML
     if (mapping.comments && mapping.comments.length > 0) {
@@ -1236,12 +1242,49 @@ function generateMappedXml(mappedValues) {
 // Escape XML special characters
 function escapeXml(unsafe) {
     if (!unsafe) return '';
+
+    // First check if this is an attribute value that already contains &quot;
+    // We want to avoid double-escaping
+    if (unsafe.includes('&quot;')) {
+        // This is already escaped, return as is
+        return unsafe;
+    }
+
+    // For field values that contain actual quotes ("), we need to properly handle them
+    // instead of converting them to &quot;
     return unsafe
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
+        .replace(/"/g, '"') // Don't escape double quotes in attribute values
+        .replace(/'/g, '\''); // Don't escape single quotes
+}
+
+// For attribute values specifically, we need a separate function
+function escapeXmlAttribute(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '"') // Don't escape quotes in attribute values
+        .replace(/'/g, '\''); // Don't escape single quotes
+}
+
+// Use this function when handling dest attributes with quotes
+function generateDestWithAttributes(fieldName) {
+    // Check if the field contains attribute syntax (@Field[attr="value"])
+    const attrMatch = fieldName.match(/@(\w+)\[(.*?)\]/);
+    if (attrMatch) {
+        const baseField = attrMatch[1];
+        const attrString = attrMatch[2];
+
+        // Preserve the attribute string exactly as is, without escaping quotes
+        return `    <dest>@${baseField}[${attrString}]</dest>\n`;
+    }
+
+    // If no attributes, just escape normally
+    return `    <dest>${escapeXml(fieldName)}</dest>\n`;
 }
 
 // Show mapped dialog
