@@ -288,43 +288,205 @@ function debugDerivedMapping(fieldNode, mapping) {
     console.log("DEBUG: Derived Mapping Extraction");
     console.log("------------------------------");
 
-    // Log the XML structure
-    const serializer = new XMLSerializer();
-    console.log("XML Structure:", serializer.serializeToString(fieldNode));
+    try {
+        // Log the XML structure
+        const serializer = new XMLSerializer();
+        console.log("XML Structure:", serializer.serializeToString(fieldNode));
 
-    // Check for if/else structure
-    const ifNodes = fieldNode.getElementsByTagName('if');
-    if (ifNodes.length > 0) {
-        console.log("Found IF nodes:", ifNodes.length);
-        for (let i = 0; i < ifNodes.length; i++) {
-            const ifNode = ifNodes[i];
-            const andNode = ifNode.getElementsByTagName('and')[0];
+        // Validate mapping structure before proceeding
+        if (!mapping) {
+            console.error("Invalid mapping object provided to debugDerivedMapping");
+            return {
+                conditions: [],
+                value: '',
+                conditionSets: [{
+                    conditions: [],
+                    value: '',
+                    outputFormat: 'VALUE',
+                    specialTags: []
+                }],
+                specialTags: []
+            };
+        }
 
-            // Log direct children of if node
-            console.log(`IF node ${i+1} direct children:`);
-            for (let j = 0; j < ifNode.childNodes.length; j++) {
-                const child = ifNode.childNodes[j];
-                if (child.nodeType === 1) { // Element node
-                    console.log(`- ${child.tagName}: ${child.textContent}`);
+        // Check for if/else structure
+        let ifNodes = [];
+        try {
+            ifNodes = fieldNode.getElementsByTagName('if');
+        } catch (error) {
+            console.error("Error getting IF nodes:", error);
+        }
+
+        if (ifNodes && ifNodes.length > 0) {
+            console.log("Found IF nodes:", ifNodes.length);
+            for (let i = 0; i < ifNodes.length; i++) {
+                try {
+                    const ifNode = ifNodes[i];
+                    let andNode = null;
+                    try {
+                        andNode = ifNode.getElementsByTagName('and')[0];
+                    } catch (error) {
+                        console.error("Error getting AND node:", error);
+                    }
+
+                    // Log direct children of if node
+                    console.log(`IF node ${i+1} direct children:`);
+                    if (ifNode && ifNode.childNodes) {
+                        for (let j = 0; j < ifNode.childNodes.length; j++) {
+                            try {
+                                const child = ifNode.childNodes[j];
+                                if (child && child.nodeType === 1) { // Element node
+                                    console.log(`- ${child.tagName}: ${child.textContent}`);
+                                }
+                            } catch (error) {
+                                console.error("Error processing IF child node:", error);
+                            }
+                        }
+                    }
+
+                    // Log the value tag that should be the result
+                    let valueNodes = [];
+                    try {
+                        valueNodes = ifNode.getElementsByTagName('value');
+                    } catch (error) {
+                        console.error("Error getting value nodes:", error);
+                    }
+
+                    if (valueNodes && valueNodes.length > 0) {
+                        for (let j = 0; j < valueNodes.length; j++) {
+                            try {
+                                const node = valueNodes[j];
+                                let isInAnd = false;
+
+                                if (andNode && node) {
+                                    try {
+                                        isInAnd = andNode.contains(node);
+                                    } catch (error) {
+                                        console.error("Error checking if node is in AND:", error);
+                                    }
+                                }
+
+                                console.log(`Value node ${j+1}: ${node.textContent} (inside AND: ${isInAnd})`);
+                            } catch (error) {
+                                console.error("Error processing value node:", error);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error processing IF node at index", i, ":", error);
                 }
             }
-
-            // Log the value tag that should be the result
-            const valueNodes = ifNode.getElementsByTagName('value');
-            for (let j = 0; j < valueNodes.length; j++) {
-                const node = valueNodes[j];
-                const isInAnd = andNode && andNode.contains(node);
-                console.log(`Value node ${j+1}: ${node.textContent} (inside AND: ${isInAnd})`);
-            }
         }
+
+        // Ensure mapping is valid before logging
+        const safeMapping = validateAndFixMapping(mapping);
+
+        // Log the final extracted mapping
+        console.log("Extracted mapping:", safeMapping);
+
+        // Safely log first condition set
+        const firstSet = safeMapping.conditionSets && safeMapping.conditionSets.length > 0
+            ? safeMapping.conditionSets[0]
+            : null;
+
+        console.log("First condition set value:", firstSet ? firstSet.value : "None");
+        console.log("------------------------------");
+
+        return safeMapping;
+    } catch (error) {
+        console.error("Global error in debugDerivedMapping:", error);
+        return {
+            conditions: [],
+            value: '',
+            conditionSets: [{
+                conditions: [],
+                value: '',
+                outputFormat: 'VALUE',
+                specialTags: []
+            }],
+            specialTags: []
+        };
+    }
+}
+
+// Helper function to validate and fix mapping object
+function validateAndFixMapping(mapping) {
+    if (!mapping || typeof mapping !== 'object') {
+        return {
+            conditions: [],
+            value: '',
+            conditionSets: [{
+                conditions: [],
+                value: '',
+                outputFormat: 'VALUE',
+                specialTags: []
+            }],
+            specialTags: []
+        };
     }
 
-    // Log the final extracted mapping
-    console.log("Extracted mapping:", mapping);
-    console.log("First condition set value:", mapping.conditionSets[0]?.value);
-    console.log("------------------------------");
+    // Create a deep clone to avoid reference issues
+    const safeCopy = {};
 
-    return mapping;
+    // Ensure conditions is an array
+    safeCopy.conditions = Array.isArray(mapping.conditions) ? [...mapping.conditions] : [];
+
+    // Copy primitive values
+    safeCopy.value = mapping.value || '';
+    safeCopy.directSrc = mapping.directSrc || '';
+
+    // Ensure specialTags is an array
+    safeCopy.specialTags = Array.isArray(mapping.specialTags) ? [...mapping.specialTags] : [];
+
+    // Deep validate conditionSets
+    if (Array.isArray(mapping.conditionSets) && mapping.conditionSets.length > 0) {
+        safeCopy.conditionSets = mapping.conditionSets.map(set => {
+            if (!set || typeof set !== 'object') {
+                return {
+                    conditions: [],
+                    value: '',
+                    outputFormat: 'VALUE',
+                    specialTags: []
+                };
+            }
+
+            const safeSet = {};
+
+            // Ensure conditions is an array
+            safeSet.conditions = Array.isArray(set.conditions) ?
+                set.conditions.map(c => ({
+                    src: c?.src || '',
+                    oper: c?.oper || 'EQUALS',
+                    value: c?.value || '',
+                    additionalValues: Array.isArray(c?.additionalValues) ? [...c.additionalValues] : []
+                })) :
+                [];
+
+            // Copy other properties
+            safeSet.value = set.value || '';
+            safeSet.outputFormat = set.outputFormat || 'VALUE';
+            safeSet.specialTags = Array.isArray(set.specialTags) ? [...set.specialTags] : [];
+
+            // Copy optional properties if they exist
+            if (set.isElseIf) safeSet.isElseIf = true;
+            if (set.isElse) safeSet.isElse = true;
+            if (set.orStructure) {
+                safeSet.orStructure = true;
+                safeSet.orConditions = Array.isArray(set.orConditions) ? [...set.orConditions] : [];
+            }
+
+            return safeSet;
+        });
+    } else {
+        safeCopy.conditionSets = [{
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }];
+    }
+
+    return safeCopy;
 }
 
 // Function to add to mappingTableDialog.js to help debug dialog rendering
@@ -459,22 +621,36 @@ function processConditionSet(parentNode, andNode) {
     }
 
     // Safety check for getElementsByTagName
-    let condNodes;
+    let condNodes = [];
     try {
-        condNodes = andNode.getElementsByTagName('cond');
+        const nodeList = andNode.getElementsByTagName('cond');
+        if (nodeList && nodeList.length > 0) {
+            condNodes = Array.from(nodeList);
+        } else {
+            console.log("No condition nodes found in andNode");
+        }
     } catch (error) {
         console.error("Error getting cond nodes:", error);
-        condNodes = [];
     }
 
-    // Process each condition node
-    Array.from(condNodes || []).forEach(condNode => {
-        try {
-            conditions.push(processCondNode(condNode));
-        } catch (error) {
-            console.error("Error processing condition node:", error);
+    // Process each condition node safely
+    if (Array.isArray(condNodes)) {
+        for (let i = 0; i < condNodes.length; i++) {
+            try {
+                const condNode = condNodes[i];
+                if (condNode && condNode.nodeType === 1) { // Element node
+                    const condition = processCondNode(condNode);
+                    if (condition) {
+                        conditions.push(condition);
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing condition node at index", i, ":", error);
+            }
         }
-    });
+    } else {
+        console.warn("condNodes is not an array:", condNodes);
+    }
 
     // Get result value (source or value tag)
     let resultValue = '';
@@ -623,7 +799,7 @@ function extractSpecialTags(node, excludeChildren = false) {
     return specialTags;
 }
 
-// Extract derived mapping data - UPDATED
+// Defensive function to safely extract derived mapping, heavily protected against errors
 function extractDerivedMapping(fieldNode) {
     console.log("Extracting derived mapping");
 
@@ -650,6 +826,9 @@ function extractDerivedMapping(fieldNode) {
             specialTags: []
         };
     }
+
+    // Setup a try/catch around the entire function to ensure we always return valid data
+    try {
 
     // First, check for direct NVL tags (outside ifelse) - These are standalone NVL tags
     const nvlNodes = fieldNode.getElementsByTagName('nvl');
@@ -898,28 +1077,97 @@ function extractDerivedMapping(fieldNode) {
 
     // Before returning, ensure all conditionSets have valid conditions arrays
     // This fixes the "conditionSet.conditions is not iterable" error
-    if (mapping.conditionSets && mapping.conditionSets.length > 0) {
-        mapping.conditionSets.forEach(set => {
-            if (!set.conditions) {
-                set.conditions = [];
-            } else if (!Array.isArray(set.conditions)) {
-                console.warn("Non-array conditions found, converting to array", set.conditions);
-                set.conditions = [];
-            }
+    if (mapping.conditionSets && Array.isArray(mapping.conditionSets)) {
+        for (let i = 0; i < mapping.conditionSets.length; i++) {
+            try {
+                const set = mapping.conditionSets[i];
+                if (!set) {
+                    mapping.conditionSets[i] = {
+                        conditions: [],
+                        value: '',
+                        outputFormat: 'VALUE',
+                        specialTags: []
+                    };
+                    continue;
+                }
 
-            // Also ensure any OR condition structures have valid condition arrays
-            if (set.orStructure && set.orConditions) {
-                set.orConditions.forEach(orCond => {
-                    if (orCond.type === 'AND' && !Array.isArray(orCond.conditions)) {
-                        orCond.conditions = [];
+                if (!set.conditions) {
+                    set.conditions = [];
+                } else if (!Array.isArray(set.conditions)) {
+                    console.warn("Non-array conditions found, converting to array", set.conditions);
+                    set.conditions = [];
+                }
+
+                // Also ensure any OR condition structures have valid condition arrays
+                if (set.orStructure && set.orConditions) {
+                    if (Array.isArray(set.orConditions)) {
+                        for (let j = 0; j < set.orConditions.length; j++) {
+                            const orCond = set.orConditions[j];
+                            if (orCond && orCond.type === 'AND') {
+                                if (!orCond.conditions || !Array.isArray(orCond.conditions)) {
+                                    orCond.conditions = [];
+                                }
+                            }
+                        }
+                    } else {
+                        set.orConditions = [];
                     }
-                });
+                }
+
+                // Make sure all conditions have proper properties
+                if (Array.isArray(set.conditions)) {
+                    for (let j = 0; j < set.conditions.length; j++) {
+                        const condition = set.conditions[j];
+                        if (!condition) {
+                            set.conditions[j] = {
+                                src: '',
+                                oper: 'EQUALS',
+                                value: '',
+                                additionalValues: []
+                            };
+                            continue;
+                        }
+
+                        if (!condition.src) condition.src = '';
+                        if (!condition.oper) condition.oper = 'EQUALS';
+                        if (!condition.value) condition.value = '';
+                        if (!condition.additionalValues || !Array.isArray(condition.additionalValues)) {
+                            condition.additionalValues = [];
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error validating condition set at index", i, ":", error);
+                mapping.conditionSets[i] = {
+                    conditions: [],
+                    value: '',
+                    outputFormat: 'VALUE',
+                    specialTags: []
+                };
             }
-        });
+        }
+    } else {
+        console.warn("conditionSets is not an array, resetting to default", mapping.conditionSets);
+        mapping.conditionSets = [{
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }];
+    }
+
+    // Ensure the base conditions array is also valid
+    if (!Array.isArray(mapping.conditions)) {
+        mapping.conditions = [];
+    }
+
+    // Ensure specialTags array is valid
+    if (!Array.isArray(mapping.specialTags)) {
+        mapping.specialTags = [];
     }
 
     // If we can't identify a format, return a default structure
-    if (mapping.conditionSets.length === 0) {
+    if (!mapping.conditionSets.length) {
         return {
             conditions: [],
             value: '',
@@ -935,7 +1183,12 @@ function extractDerivedMapping(fieldNode) {
     }
 
     try {
-        return debugDerivedMapping(fieldNode, mapping);
+        const result = debugDerivedMapping(fieldNode, mapping);
+        // One more safety check on the result
+        if (!result || typeof result !== 'object') {
+            throw new Error("debugDerivedMapping returned invalid result");
+        }
+        return result;
     } catch (error) {
         console.error("Error in debugDerivedMapping:", error);
         // Return a safe fallback if debug fails
@@ -948,10 +1201,26 @@ function extractDerivedMapping(fieldNode) {
                 outputFormat: 'VALUE',
                 specialTags: []
             }],
-            specialTags: mapping.specialTags || [],
+            specialTags: Array.isArray(mapping.specialTags) ? mapping.specialTags : [],
             directSrc: mapping.directSrc
         };
     }
+} catch (error) {
+    console.error("Global error in extractDerivedMapping:", error);
+    // Return a completely safe default if anything goes wrong
+    return {
+        conditions: [],
+        value: '',
+        conditionSets: [{
+            conditions: [],
+            value: '',
+            outputFormat: 'VALUE',
+            specialTags: []
+        }],
+        specialTags: [],
+        directSrc: ''
+    };
+}
 }
 
 // Extract MAPPED mapping data - UPDATED
