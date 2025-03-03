@@ -989,9 +989,17 @@ function generateDerivedXml(derivedMapping) {
             xml += '    <ifelse>\n';
 
             // Generate if nodes for each condition set
+            let isFirstConditionSet = true;
             derivedMapping.conditionSets.forEach(conditionSet => {
                 if (conditionSet.conditions.length > 0) {
-                    xml += '      <if>\n';
+                    // Use <if> for the first condition set, <else-if> for the rest
+                    if (isFirstConditionSet) {
+                        xml += '      <if>\n';
+                        isFirstConditionSet = false;
+                    } else {
+                        xml += '      <else-if>\n';
+                    }
+
                     xml += '        <and>\n';
 
                     // Generate condition nodes
@@ -1015,7 +1023,12 @@ function generateDerivedXml(derivedMapping) {
                         xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
                     }
 
-                    xml += '      </if>\n';
+                    // Use correct closing tag based on whether this is an if or else-if
+                    if (isFirstConditionSet === false) {
+                        xml += '      </if>\n';
+                    } else {
+                        xml += '      </else-if>\n';
+                    }
                 }
             });
 
@@ -1028,10 +1041,21 @@ function generateDerivedXml(derivedMapping) {
             const defaultValue = defaultSet?.value || derivedMapping.value || '';
 
             // Add default value with the appropriate tag
-            if (isSourceFormat) {
-                xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
+            if (defaultSet) {
+                xml += '      <else>\n';
+                if (isSourceFormat) {
+                    xml += `        <src>${escapeXml(defaultValue)}</src>\n`;
+                } else {
+                    xml += `        <value>${escapeXml(defaultValue)}</value>\n`;
+                }
+                xml += '      </else>\n';
             } else {
-                xml += `      <value>${escapeXml(defaultValue)}</value>\n`;
+                // Just add a default value at the ifelse level if no else condition
+                if (isSourceFormat) {
+                    xml += `      <src>${escapeXml(defaultValue)}</src>\n`;
+                } else {
+                    xml += `      <value>${escapeXml(defaultValue)}</value>\n`;
+                }
             }
 
             xml += '    </ifelse>\n';
@@ -1044,12 +1068,8 @@ function generateDerivedXml(derivedMapping) {
             derivedMapping.conditionSets.forEach(conditionSet => {
                 if (conditionSet.conditions.length > 0) {
                     // First condition set uses <if>, others use <else-if>
-                    if (isFirstIf) {
-                        xml += '      <if>\n';
-                        isFirstIf = false;
-                    } else {
-                        xml += '      <else-if>\n';
-                    }
+                    const nodeType = isFirstIf ? 'if' : 'else-if';
+                    xml += `      <${nodeType}>\n`;
 
                     // Check if there are ref tags to use
                     const hasRef = conditionSet.conditions.some(cond => cond.src.includes('Ref'));
@@ -1097,11 +1117,11 @@ function generateDerivedXml(derivedMapping) {
                         xml += `        <value>${escapeXml(conditionSet.value)}</value>\n`;
                     }
 
-                    // Close the if or else-if tag
+                    // Close the if or else-if tag with the correct tag name
+                    xml += `      </${nodeType}>\n`;
+
                     if (isFirstIf) {
-                        xml += '      </if>\n';
-                    } else {
-                        xml += '      </else-if>\n';
+                        isFirstIf = false;
                     }
                 }
             });
