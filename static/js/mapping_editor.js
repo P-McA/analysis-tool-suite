@@ -781,6 +781,7 @@ function extractComments(xmlString) {
 }
 
 // Generate XML for a single mapping
+// Generate XML for a single mapping
 function generateMappingXml(mapping) {
     let xml = '  <field>\n';
     xml += `    <dest>${escapeXml(mapping.fieldName)}</dest>\n`;
@@ -808,14 +809,15 @@ function generateMappingXml(mapping) {
             break;
     }
 
+    // First add status (CHANGED ORDER - status comes before notes)
+    xml += `    <status>${escapeXml(mapping.status)}</status>\n`;
+
+    // Then add notes (CHANGED ORDER - notes comes after status)
     if (mapping.notes) {
         xml += `    <notes>${escapeXml(mapping.notes)}</notes>\n`;
     }
 
-    // First add status
-    xml += `    <status>${escapeXml(mapping.status)}</status>\n`;
-
-    // Then add tickets with <tickets> wrapper tags
+    // Add tickets with <tickets> wrapper tags
     if (mapping.tickets && mapping.tickets.trim()) {
         const ticketLines = mapping.tickets.split('\n')
             .filter(ticket => ticket.trim())
