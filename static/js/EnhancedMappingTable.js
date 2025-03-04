@@ -270,29 +270,58 @@ const EnhancedMappingTable = () => {
     };
 
     const renderMappedValuesGrid = (mapping) => {
-        if (!mapping || !mapping.mappedValues?.mappings?.length) return null;
+    if (!mapping || !mapping.mappedValues?.mappings?.length) return null;
 
-        return (
-            <div className="mt-2 bg-gray-50 p-2 rounded">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-100">
-                        <tr>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">From Value</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">To Value</th>
+    // Check if this is a multi-column mapping
+    const isMultiColumn = Array.isArray(mapping.mappedValues.src);
+
+    return (
+        <div className="mt-2 bg-gray-50 p-2 rounded">
+            <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-100">
+                    <tr>
+                        {isMultiColumn ? (
+                            // For multi-column, show all source column headers
+                            mapping.mappedValues.src.map((src, idx) => (
+                                <th key={idx} className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                    {src}
+                                </th>
+                            ))
+                        ) : (
+                            // For traditional, show From/To headers
+                            <>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">From Value</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">To Value</th>
+                            </>
+                        )}
+                    </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                    {mapping.mappedValues.mappings.map((map, idx) => (
+                        <tr key={idx}>
+                            {isMultiColumn ? (
+                                // For multi-column, display each source's value
+                                mapping.mappedValues.src.map((src, colIdx) => (
+                                    <td key={colIdx} className="px-3 py-2 text-sm">
+                                        {map[src] || ''}
+                                    </td>
+                                ))
+                            ) : (
+                                // For traditional, display from/to values
+                                <>
+                                    <td className="px-3 py-2 text-sm">{map.from}</td>
+                                    <td className="px-3 py-2 text-sm">
+                                        {Array.isArray(map.to) ? map.to.join(', ') : map.to}
+                                    </td>
+                                </>
+                            )}
                         </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {mapping.mappedValues.mappings.map((map, idx) => (
-                            <tr key={idx}>
-                                <td className="px-3 py-2 text-sm">{map.from}</td>
-                                <td className="px-3 py-2 text-sm">{Array.isArray(map.to) ? map.to.join(', ') : map.to}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        );
-    };
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
 
     const renderSourceCell = (mapping, index) => {
         if (!mapping) return <span className="text-gray-500">Invalid mapping</span>;
