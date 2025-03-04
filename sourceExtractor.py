@@ -1,73 +1,85 @@
 import re
 import json
+import csv
+
+
 def extract_report_fields_and_values(json_text):
-    try:
-        cleaned_text = re.sub(r'(\w+)\s*:', r'"\1":', json_text)
-        cleaned_text = re.sub(r',\s*}', r'}', cleaned_text)
-        data = json.loads(cleaned_text)
-        return process_json_data(data)
-    except json.JSONDecodeError:
-        return regex_extraction(json_text)
+    results = []
 
-
-def process_json_data(data):
-    results = {}
-    if isinstance(data, dict):
-        field_id = data.get("id", "")
-        if isinstance(field_id, str) and field_id.startswith("Report."):
-            values = []
-            if "values" in data and isinstance(data["values"], list):
-                for value_item in data["values"]:
-                    if isinstance(value_item, dict) and "id" in value_item:
-                        values.append(value_item["id"])
-            results[field_id] = values
-
-        for key, value in data.items():
-            child_results = process_json_data(value)
-            results.update(child_results)
-
-    elif isinstance(data, list):
-        for item in data:
-            child_results = process_json_data(item)
-            results.update(child_results)
-
-    return results
-
-
-def regex_extraction(text):
-    results = {}
-
+    # Find all field IDs starting with "Report."
     field_id_pattern = r'"id"\s*:\s*"(Report\.[^"]+)"'
-    field_matches = re.findall(field_id_pattern, text)
+    field_matches = re.findall(field_id_pattern, json_text)
 
     for field_id in field_matches:
-        values_pattern = r'"' + re.escape(field_id) + r'".*?"values"\s*:\s*\[(.*?)\]'
-        values_section_match = re.search(values_pattern, text, re.DOTALL)
+        # Find the values section associated with this field
+        values_section_pattern = r'"relativePath"\s*:\s*"' + re.escape(field_id) + r'".*?"values"\s*:\s*\[(.*?)\]'
+        values_section_match = re.search(values_section_pattern, json_text, re.DOTALL)
 
         if values_section_match:
             values_section = values_section_match.group(1)
-            value_id_pattern = r'"id"\s*:\s*"([^"]+)"'
-            values = re.findall(value_id_pattern, values_section)
-            results[field_id] = values
+            # Extract individual value entries
+            value_entries = re.finditer(r'{(.*?)}', values_section, re.DOTALL)
+
+            for entry in value_entries:
+                entry_text = entry.group(1)
+                # Extract ID (Enum)
+                enum_match = re.search(r'"id"\s*:\s*"([^"]+)"', entry_text)
+                # Extract alternateId (Shortcode)
+                shortcode_match = re.search(r'"alternateId"\s*:\s*"([^"]+)"', entry_text)
+
+                if enum_match:
+                    enum = enum_match.group(1)
+                    shortcode = shortcode_match.group(1) if shortcode_match else ""
+                    results.append({
+                        "Field": field_id,
+                        "Enum": enum,
+                        "Shortcode": shortcode
+                    })
+        else:
+            # Handle fields with no values
+            results.append({
+                "Field": field_id,
+                "Enum": "",
+                "Shortcode": ""
+            })
 
     return results
 
 
+def process_file(input_file_path, output_file_path):
+    try:
+        with open(input_file_path, 'r') as file:
+            content = file.read()
+
+        results = extract_report_fields_and_values(content)
+
+        # Write results to CSV
+        with open(output_file_path, 'w', newline='') as csvfile:
+            fieldnames = ['Field', 'Enum', 'Shortcode']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for row in results:
+                writer.writerow(row)
+
+        print(f"Processing complete. Results saved to {output_file_path}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 def main():
-    # For file input
-    # with open('input.txt', 'r') as file:
-    #     content = file.read()
+    # For demonstration - replace with actual file paths
+    input_file_path = "input.txt"  # Path to the input file
+    output_file_path = "report_fields_and_values.csv"  # Path for the output CSV
 
-    # For direct text input (example)
-    results = extract_report_fields_and_values(content)
+    process_file(input_file_path, output_file_path)
 
-    # Print results in the requested format
-    for field_id, values in results.items():
-        print(f"Field\n{field_id}\n")
-        print("Values")
-        for value in values:
-            print(value)
-        print()
+    test_results = extract_report_fields_and_values(test_content)
+    print("\nTest Results:")
+    print("Field, Enum, Shortcode")
+    for row in test_results:
+        print(f"{row['Field']}, {row['Enum']}, {row['Shortcode']}")
 
 
 if __name__ == "__main__":
