@@ -551,6 +551,9 @@ def upload_mapping():
         return jsonify({'success': True, 'content': xml_content})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+@app.route('/watchdog_results')
+def watchdog_results():
+    return render_template('watchdog_results.html')
 '''
 @app.route('/confluence_comparison')
 def confluence_comparison():
