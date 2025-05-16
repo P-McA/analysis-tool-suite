@@ -554,6 +554,10 @@ def upload_mapping():
 @app.route('/watchdog_results')
 def watchdog_results():
     return render_template('watchdog_results.html')
+
+@app.route('/fix_message_comparison')
+def fix_message_comparison():
+    return render_template('fix_message_comparison.html')
 '''
 @app.route('/confluence_comparison')
 def confluence_comparison():
