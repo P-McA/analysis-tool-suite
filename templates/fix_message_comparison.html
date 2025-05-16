@@ -64,37 +64,122 @@
           const getFieldNameMap = () => {
             return {
               // Common fields
-              '1': 'Account',
-              '6': 'AvgPx',
-              '11': 'ClOrdID',
-              '14': 'CumQty',
-              '17': 'ExecID',
-              '20': 'ExecTransType',
-              '22': 'IDSource',
-              '31': 'LastPx',
-              '32': 'LastQty',
-              '35': 'MsgType',
-              '37': 'OrderID',
-              '38': 'OrderQty',
-              '39': 'OrdStatus',
-              '40': 'OrdType',
-              '44': 'Price',
-              '48': 'SecurityID',
-              '49': 'SenderCompID',
-              '54': 'Side',
-              '55': 'Symbol',
-              '56': 'TargetCompID',
-              '59': 'TimeInForce',
-              '60': 'TransactTime',
-              '150': 'ExecType',
-              '151': 'LeavesQty',
-              '552': 'NoSides',
-              '571': 'TradeReportID',
-              '748': 'MultiLegReportingType',
-              '797': 'CopyMsgIndicator',
-              '828': 'TrdType',
-              '856': 'TradeReportType',
-              '1056': 'CalculatedCcyLastQty',
+'571':  'TradeReportID',
+'1003':  'TradeID',
+'1040':  'SecondaryTradeID',
+'10036':  'PackageID',
+'487':  'TradeReportTransType',
+'856':  'TradeReportType',
+'939':  'TrdRptStatus',
+'568':  'TradeRequestID',
+'828':  'TrdType',
+'880':  'TrdMatchID',
+'820':  'TradeLinkID',
+'2490':  'TradeNumber',
+'20011':  'DealID',
+'17':  'ExecID',
+'527':  'SecondaryExecID',
+'423':  'PriceType',
+'1430':  'VenueType',
+'32':  'LastQty',
+'31':  'LastPx',
+'75':  'TradeDate',
+'715':  'ClearingBusinessDate',
+'442':  'MultiLegReportingType',
+'60':  'TransactTime',
+'64':  'SettlDate',
+'779':  'LastUpdateTime',
+'1832':  'ClearedIndicator',
+'10033':  'DifferentialPrice',
+'10024':  'DifferentialPriceType',
+'37711':  'MarketDataTradeEntryID',
+'10053':  'SplitIndicator',
+'20043':  'AlternatePrice',
+'20056':  'SettlementTradeID',
+'30':  'LastMkt',
+'20400':  'NonDisclosedIndicator',
+'20060':  'VenueSubType',
+'1500':  'MDStreamID',
+'916':  'StartDate',
+'917':  'EndDate',
+'711':  'UndInstrmtGrp',
+'555':  'TrdInstrmtLegGrp',
+'552':  'TrdCapRptSideGrp',
+'2668':  'TrdRegPublicationGrp',
+'2669':  'TrdRegPublicationType',
+'2670':  'TrdRegPublicationReason',
+'55':  'Symbol',
+'48':  'SecurityID',
+'22':  'SecurityIDSource',
+'461':  'CFICode',
+'167':  'SecurityType',
+'762':  'SecuritySubType',
+'207':  'SecurityExchange',
+'107':  'SecurityDesc',
+'10026':  'PriceQuoteCurrency',
+'37513':  'GUID',
+'455':  'SecurityAltID',
+'456':  'SecurityAltIDSource',
+'711':  'NoUnderlyings',
+'810':  'UnderlyingPx',
+'882':  'UnderlyingDirtyPrice',
+'687':  'LegQty',
+'990':  'LegReportID',
+'1152':  'LegNumber',
+'654':  'LegRefID',
+'637':  'LegLastPx',
+'686':  'LegPriceType',
+'10055':  'LegAlternatePrice',
+'600':  'LegSymbol',
+'602':  'LegSecurityID',
+'603':  'LegSecurityIDSource',
+'608':  'LegCFICode',
+'609':  'LegSecurityType',
+'616':  'LegSecurityExchange',
+'620':  'LegSecurityDesc',
+'624':  'LegSide',
+'10056':  'LegInstrumentGUID',
+'605':  'LegSecurityAltID',
+'606':  'LegSecurityAltIDSource',
+'54':  'Side',
+'526':  'SideSecondaryClOrdID',
+'11':  'SideClOrdID',
+'578':  'TradeInputSource',
+'582':  'CustOrderCapacity',
+'921':  'StartCash',
+'922':  'EndCash',
+'1057':  'AggressorIndicator',
+'10039':  'SideOrigTradeID',
+'1851':  'StrategyLinkID',
+'37':  'OrderID',
+'9373':  'LiquidityFlag',
+'5149':  'Memo',
+'158':  'AccruedInterestRate',
+'5106':  'FundDesignation',
+'453':  'Parties',
+'10034':  'SideRegulatoryTradeIDGrp',
+'2639':  'CommissionDataGrp',
+'1016':  'SideTrdRegTS',
+'1012':  'SideTrdRegTimestamp',
+'1013':  'SideTrdRegTimestampType',
+'1855':  'RelatedTradeGrp',
+'1856':  'RelatedTradeID',
+'1857':  'RelatedTradeIDSource',
+'448':  'PartyID',
+'447':  'PartyIDSource',
+'452':  'PartyRole',
+'802':  'PtysSubGrp',
+'523':  'PartySubID',
+'803':  'PartySubIDType',
+'10027':  'Side Regulatory Trade ID',
+'10028':  'Side Regulatory Trade ID Source',
+'10029':  'Side Regulatory Trade ID Event',
+'10030':  'Side Regulatory Trade ID Type',
+'2639':  'NoCommissions',
+'2640':  'Commission Amount',
+'2642':  'Commission Basis',
+'2646':  'Commission Rate',
+'2649':  'Commission Leg Ref ID',
               // Add more field names as needed
             };
           };
@@ -115,6 +200,22 @@
               // Get all fields from both messages
               const execFields = Object.keys(execObj);
               const tradeFields = Object.keys(tradeObj);
+
+              // Find fields only in exec report
+              const onlyInExec = execFields.filter(field => !tradeFields.includes(field))
+                .map(field => ({
+                  field,
+                  fieldName: getFieldName(field),
+                  value: execObj[field]
+                }));
+
+              // Find fields only in trade capture
+              const onlyInTrade = tradeFields.filter(field => !execFields.includes(field))
+                .map(field => ({
+                  field,
+                  fieldName: getFieldName(field),
+                  value: tradeObj[field]
+                }));
 
               // Find common fields (present in both messages)
               const commonFields = execFields.filter(field => tradeFields.includes(field));
@@ -167,6 +268,8 @@
               });
 
               setResults({
+                onlyInExec,
+                onlyInTrade,
                 commonFields: commonFields.map(field => ({
                   field,
                   fieldName: getFieldName(field),
@@ -257,6 +360,64 @@
 
               {results && (
                 <div className="mt-6 space-y-6">
+                  {/* Fields Only in Execution Report */}
+                  <div className="border-t pt-4">
+                    <div className="text-md font-semibold mb-2">Fields Only in Execution Report</div>
+                    {results.onlyInExec.length === 0 ? (
+                      <div className="text-gray-500 italic">No unique fields found in Execution Report</div>
+                    ) : (
+                      <div className="bg-white rounded-lg border p-4 overflow-auto max-h-64">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-100">
+                              <th className="text-left p-2">Tag</th>
+                              <th className="text-left p-2">Field Name</th>
+                              <th className="text-left p-2">Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {results.onlyInExec.map((item, index) => (
+                              <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                <td className="p-2">{item.field}</td>
+                                <td className="p-2">{item.fieldName}</td>
+                                <td className="p-2">{item.value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fields Only in Trade Capture Report */}
+                  <div className="border-t pt-4">
+                    <div className="text-md font-semibold mb-2">Fields Only in Trade Capture Report</div>
+                    {results.onlyInTrade.length === 0 ? (
+                      <div className="text-gray-500 italic">No unique fields found in Trade Capture Report</div>
+                    ) : (
+                      <div className="bg-white rounded-lg border p-4 overflow-auto max-h-64">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-100">
+                              <th className="text-left p-2">Tag</th>
+                              <th className="text-left p-2">Field Name</th>
+                              <th className="text-left p-2">Value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {results.onlyInTrade.map((item, index) => (
+                              <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                <td className="p-2">{item.field}</td>
+                                <td className="p-2">{item.fieldName}</td>
+                                <td className="p-2">{item.value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="border-t pt-4">
                     <div className="text-md font-semibold mb-2">Fields Present in Both Messages</div>
                     {results.commonFields.length === 0 ? (
