@@ -109,74 +109,28 @@
                     </div>
                 </div>
 
-                <div class="row">
-                    <!-- Venue 1 -->
-                    <div class="col-lg-6 col-xl-3 mb-4">
-                        <div class="card venue-card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Venue 1</h5>
-                            </div>
-                            <div class="card-body">
-                                <input type="text" class="form-control mb-3" name="venueName1" placeholder="Enter venue name" value="Venue 1">
-                                <div class="drop-zone" data-venue="1">
-                                    <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-muted"></i>
-                                    <span class="drop-zone__prompt">Drop CSV file or click to upload</span>
-                                    <input type="file" name="venue1" class="drop-zone__input" accept=".csv">
-                                </div>
-                            </div>
+                <!-- Venue Controls -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center">
+                            <label class="form-label me-3 mb-0">Number of Venues:</label>
+                            <span class="badge bg-primary fs-6 me-3" id="venueCount">2</span>
+                            <button type="button" class="btn btn-outline-success btn-sm me-2" id="addVenueBtn">
+                                <i class="fas fa-plus"></i> Add Venue
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" id="removeVenueBtn">
+                                <i class="fas fa-minus"></i> Remove Venue
+                            </button>
                         </div>
                     </div>
+                    <div class="col-md-6 text-md-end">
+                        <small class="text-muted">Minimum: 2 venues | Maximum: 10 venues</small>
+                    </div>
+                </div>
 
-                    <!-- Venue 2 -->
-                    <div class="col-lg-6 col-xl-3 mb-4">
-                        <div class="card venue-card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Venue 2</h5>
-                            </div>
-                            <div class="card-body">
-                                <input type="text" class="form-control mb-3" name="venueName2" placeholder="Enter venue name" value="Venue 2">
-                                <div class="drop-zone" data-venue="2">
-                                    <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-muted"></i>
-                                    <span class="drop-zone__prompt">Drop CSV file or click to upload</span>
-                                    <input type="file" name="venue2" class="drop-zone__input" accept=".csv">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Venue 3 -->
-                    <div class="col-lg-6 col-xl-3 mb-4">
-                        <div class="card venue-card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Venue 3</h5>
-                            </div>
-                            <div class="card-body">
-                                <input type="text" class="form-control mb-3" name="venueName3" placeholder="Enter venue name" value="Venue 3">
-                                <div class="drop-zone" data-venue="3">
-                                    <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-muted"></i>
-                                    <span class="drop-zone__prompt">Drop CSV file or click to upload</span>
-                                    <input type="file" name="venue3" class="drop-zone__input" accept=".csv">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Venue 4 -->
-                    <div class="col-lg-6 col-xl-3 mb-4">
-                        <div class="card venue-card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Venue 4</h5>
-                            </div>
-                            <div class="card-body">
-                                <input type="text" class="form-control mb-3" name="venueName4" placeholder="Enter venue name" value="Venue 4">
-                                <div class="drop-zone" data-venue="4">
-                                    <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-muted"></i>
-                                    <span class="drop-zone__prompt">Drop CSV file or click to upload</span>
-                                    <input type="file" name="venue4" class="drop-zone__input" accept=".csv">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <!-- Dynamic Venues Container -->
+                <div class="row" id="venuesContainer">
+                    <!-- Venue cards will be added dynamically -->
                 </div>
 
                 <div class="row mb-4">
@@ -186,6 +140,9 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Hidden input to store number of venues -->
+                <input type="hidden" name="numVenues" id="numVenuesInput" value="2">
             </form>
         </div>
 

@@ -581,19 +581,30 @@ def fixml_field_analysis():
 @app.route('/upload_fixml_venues', methods=['POST'])
 def upload_fixml_venues():
     try:
-        # Check if all 4 files are provided
-        venue_files = {}
-        for i in range(1, 5):
-            file_key = f'venue{i}'
-            if file_key not in request.files or request.files[file_key].filename == '':
-                return jsonify({'error': f'Venue {i} file is required'}), 400
-            venue_files[file_key] = request.files[file_key]
+        # Get the number of venues from the form
+        num_venues = int(request.form.get('numVenues', 2))
 
-        # Get venue names
+        if num_venues < 2:
+            return jsonify({'error': 'Minimum 2 venues required for comparison'}), 400
+
+        if num_venues > 10:  # Set a reasonable maximum
+            return jsonify({'error': 'Maximum 10 venues supported'}), 400
+
+        # Check if all required files are provided
+        venue_files = {}
         venue_names = {}
-        for i in range(1, 5):
+
+        for i in range(1, num_venues + 1):
+            file_key = f'venue{i}'
             name_key = f'venueName{i}'
-            venue_names[f'venue{i}'] = request.form.get(name_key, f'Venue {i}')
+
+            # Check if file exists and is not empty
+            if file_key not in request.files or request.files[file_key].filename == '':
+                venue_name = request.form.get(name_key, f'Venue {i}')
+                return jsonify({'error': f'{venue_name} file is required'}), 400
+
+            venue_files[file_key] = request.files[file_key]
+            venue_names[file_key] = request.form.get(name_key, f'Venue {i}')
 
         # Process each CSV file
         venue_data = {}
@@ -643,6 +654,7 @@ def analyze_fixml_venues(venue_data):
 
     venues = list(venue_data.keys())
     venue_names = [venue_data[venue]['name'] for venue in venues]
+    num_venues = len(venues)
 
     # First pass: collect all unique values
     for venue_key, venue_info in venue_data.items():
@@ -706,10 +718,16 @@ def analyze_fixml_venues(venue_data):
         pattern = tuple(field_matrix[field][venue] for venue in venues)
         presence_patterns[pattern].append(field)
 
+    # Calculate dynamic summary statistics
+    fields_in_all_venues = len([f for f, stats in field_stats.items() if stats['present_in'] == num_venues])
+    fields_in_one_venue = len([f for f, stats in field_stats.items() if stats['present_in'] == 1])
+    fields_in_multiple_venues = len([f for f, stats in field_stats.items() if 1 < stats['present_in'] < num_venues])
+
     return {
         'success': True,
         'venue_names': venue_names,
         'venues': venues,
+        'num_venues': num_venues,
         'total_fields': len(all_fields),
         'total_enum_values': len(all_enum_values),
         'total_presence_values': len(all_presence_values),
@@ -721,9 +739,9 @@ def analyze_fixml_venues(venue_data):
             str(pattern): fields for pattern, fields in presence_patterns.items()
         },
         'summary': {
-            'fields_in_all_venues': len([f for f, stats in field_stats.items() if stats['present_in'] == 4]),
-            'fields_in_one_venue': len([f for f, stats in field_stats.items() if stats['present_in'] == 1]),
-            'fields_in_multiple_venues': len([f for f, stats in field_stats.items() if 1 < stats['present_in'] < 4])
+            'fields_in_all_venues': fields_in_all_venues,
+            'fields_in_one_venue': fields_in_one_venue,
+            'fields_in_multiple_venues': fields_in_multiple_venues
         }
     }
 
