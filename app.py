@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template
+from flask import send_from_directory
 import xml.etree.ElementTree as ET
 import difflib
 import re
@@ -575,7 +576,7 @@ def fix_message_comparison():
 # NEW FIXML Field Analysis Tool
 @app.route('/fixml_field_analysis')
 def fixml_field_analysis():
-    return render_template('fixml_field_analysis.html')
+    return send_from_directory('static', 'fixml_field_analysis.html')
 
 
 @app.route('/upload_fixml_venues', methods=['POST'])
@@ -744,6 +745,9 @@ def analyze_fixml_venues(venue_data):
             'fields_in_multiple_venues': fields_in_multiple_venues
         }
     }
+@app.route('/debug_fixml')
+def debug_fixml():
+    return render_template('debug_fixml_analysis.html')
 
 
 if __name__ == '__main__':

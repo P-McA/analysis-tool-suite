@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXML Field Analysis Tool</title>
+    <!-- Use reliable CDNs with fallback -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #root {
+            padding: 20px;
+        }
+        .drop-zone {
+            @apply border-2 border-dashed border-gray-300 p-4 text-center mb-4 cursor-pointer;
+        }
+        .drop-zone.dragover {
+            @apply bg-gray-100;
+        }
+        .error-message {
+            color: red;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <div id="error-root" className="error-message"></div>
+
+    <script type="text/babel">
+        // Check if dependencies are loaded
+        if (!window.React || !window.ReactDOM || !window.Babel) {
+            document.getElementById('error-root').innerText =
+                'Error: Failed to load React, ReactDOM, or Babel. Please check your network connection.';
+            throw new Error('Dependencies not loaded');
+        }
+
+        const { useState, useEffect } = React;
+
+        // Error Boundary Component
+        class ErrorBoundary extends React.Component {
+            state = { hasError: false, error: null };
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="error-message">
+                            <h2>Something went wrong:</h2>
+                            <p>{this.state.error?.toString()}</p>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        const VenueInput = ({ index, onFileChange }) => {
+            const [fileName, setFileName] = useState('');
+
+            return (
+                <div className="mb-4">
+                    <label className="block text-lg font-semibold mb-2">Venue {index}</label>
+                    <div
+                        className={`drop-zone ${fileName ? 'bg-green-100' : ''}`}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragLeave={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            const file = e.dataTransfer.files[0];
+                            if (file && file.type === 'text/csv') {
+                                setFileName(file.name);
+                                onFileChange(index, file);
+                            }
+                        }}
+                        onClick={() => document.getElementById(`venueFile${index}`).click()}
+                    >
+                        <input
+                            id={`venueFile${index}`}
+                            type="file"
+                            name={`venue${index}`}
+                            accept=".csv"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                    setFileName(file.name);
+                                    onFileChange(index, file);
+                                }
+                            }}
+                        />
+                        <p>{fileName || 'Drop CSV file or click to upload'}</p>
+                    </div>
+                    <input
+                        type="text"
+                        name={`venueName${index}`}
+                        placeholder="Venue Name"
+                        className="w-full p-2 border rounded mt-2"
+                    />
+                </div>
+            );
+        };
+
+        const DataGrid = ({ data, columns }) => (
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            {columns.map((col, idx) => (
+                                <th key={idx} className="py-2 px-4 border-b">{col}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {data.map((row, rowIdx) => (
+                            <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                {columns.map((col, colIdx) => (
+                                    <td key={colIdx} className="py-2 px-4 border-b">
+                                        {row[col] || '-'}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+
+        const App = () => {
+            const [venueCount, setVenueCount] = useState(2);
+            const [venues, setVenues] = useState({});
+            const [analysisData, setAnalysisData] = useState(null);
+            const [error, setError] = useState(null);
+
+            const handleFileChange = (index, file) => {
+                setVenues(prev => ({ ...prev, [`venue${index}`]: file }));
+            };
+
+            const addVenue = () => {
+                if (venueCount < 10) setVenueCount(prev => prev + 1);
+            };
+
+            const removeVenue = () => {
+                if (venueCount > 2) setVenueCount(prev => prev - 1);
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+                const formData = new FormData();
+                formData.append('numVenues', venueCount);
+                for (let i = 1; i <= venueCount; i++) {
+                    if (venues[`venue${i}`]) formData.append(`venue${i}`, venues[`venue${i}`]);
+                    const name = document.querySelector(`input[name="venueName${i}"]`)?.value || '';
+                    formData.append(`venueName${i}`, name);
+                }
+
+                try {
+                    const response = await fetch('/upload_fixml_venues', { method: 'POST', body: formData });
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        setAnalysisData(data);
+                        console.log('Analysis Data:', data); // Debug
+                    } else {
+                        throw new Error(data.error || 'Unknown error');
+                    }
+                } catch (err) {
+                    console.error('Fetch error:', err);
+                    setError(err.message);
+                }
+            };
+
+            const summaryStats = analysisData ? [
+                { 'Metric': 'Total Fields', 'Value': analysisData.total_fields },
+                { 'Metric': 'All Venues', 'Value': analysisData.summary?.fields_in_all_venues },
+                { 'Metric': 'Multiple Venues', 'Value': analysisData.summary?.fields_in_multiple_venues },
+                { 'Metric': 'Single Venue', 'Value': analysisData.summary?.fields_in_one_venue },
+            ] : [];
+
+            const fieldPresenceMatrix = analysisData ? Object.entries(analysisData.field_matrix).map(([field, presence]) => ({
+                'Field Name': field,
+                ...analysisData.venue_names.reduce((acc, name, idx) => ({ ...acc, [name]: presence[`venue${idx + 1}`] ? 'Yes' : 'No' }), {})
+            })) : [];
+
+            return (
+                <div className="container mx-auto">
+                    <h1 className="text-3xl font-bold mb-4">FIXML Field Analysis Tool</h1>
+                    <p className="mb-4">Analyze FIXML field presence, enumeration values, and presence patterns across multiple trading venues.</p>
+
+                    {error && (
+                        <div className="error-message">
+                            <h2>Error:</h2>
+                            <p>{error}</p>
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="mb-6">
+                        <div className="flex items-center mb-4">
+                            <label className="mr-2">Number of Venues: {venueCount}</label>
+                            <button type="button" onClick={addVenue} className="bg-blue-500 text-white px-4 py-2 rounded mr-2">Add Venue</button>
+                            <button type="button" onClick={removeVenue} className="bg-red-500 text-white px-4 py-2 rounded">Remove Venue</button>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-4">Minimum: 2 venues | Maximum: 10 venues</p>
+                        {Array.from({ length: venueCount }, (_, i) => (
+                            <VenueInput key={i + 1} index={i + 1} onFileChange={handleFileChange} />
+                        ))}
+                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded">Analyze FIXML Fields</button>
+                    </form>
+
+                    {analysisData && (
+                        <div>
+                            <h2 className="text-2xl font-semibold mb-2">Summary Statistics</h2>
+                            <DataGrid data={summaryStats} columns={['Metric', 'Value']} />
+
+                            <h2 className="text-2xl font-semibold mt-6 mb-2">Field Presence Matrix</h2>
+                            <p className="mb-2">Green indicates field is present, red indicates absent</p>
+                            <DataGrid data={fieldPresenceMatrix} columns={['Field Name', ...analysisData.venue_names]} />
+
+                            <h2 className="text-2xl font-semibold mt-6 mb-2">Enumeration Values</h2>
+                            <p className="mb-2">Shows which fields use specific enumeration values in each venue</p>
+                            <DataGrid data={Object.entries(analysisData.enum_matrix).map(([enumVal, fields]) => ({
+                                'Enumeration Value': enumVal,
+                                ...analysisData.venue_names.reduce((acc, name, idx) => ({ ...acc, [name]: fields[`venue${idx + 1}`].join(', ') || '-' }), {})
+                            }))} columns={['Enumeration Value', ...analysisData.venue_names]} />
+
+                            <h2 className="text-2xl font-semibold mt-6 mb-2">Presence Patterns</h2>
+                            <DataGrid data={Object.entries(analysisData.presence_patterns).map(([pattern, fields]) => ({
+                                'Pattern': pattern,
+                                'Fields': fields.join(', ')
+                            }))} columns={['Pattern', 'Fields']} />
+                        </div>
+                    )}
+
+                    <button onClick={() => window.location.reload()} className="mt-4 bg-blue-500 text-white px-4 py-2 rounded">
+                        Run New Analysis
+                    </button>
+                </div>
+            );
+        };
+
+        ReactDOM.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>,
+            document.getElementById('root')
+        );
+    </script>
+</body>
+</html>
