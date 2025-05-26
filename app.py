@@ -11,7 +11,6 @@ from collections import defaultdict
 from datetime import datetime
 import json
 from deepdiff import DeepDiff
-from confluence_helper import ConfluenceTableComparer
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -297,6 +296,7 @@ def compare_dataframes(df1, df2, columns):
 def revision_history():
     return render_template('revision_history_generator.html')
 
+
 @app.route('/generate_revision_history', methods=['POST'])
 def generate_revision_history():
     file_a = request.files['fileA']
@@ -388,11 +388,14 @@ def generate_revision_history():
         'revision_history': revision_entries
     })
 
+
 revision_entries = []
+
 
 @app.route('/cdo_json_comparison')
 def cdo_json_comparison():
     return render_template('cdo_json_comparison.html')
+
 
 def get_all_paths(obj, parent_path=''):
     """Recursively get all paths in a nested dictionary using dot notation"""
@@ -409,6 +412,7 @@ def get_all_paths(obj, parent_path=''):
             if isinstance(value, (dict, list)):
                 paths.extend(get_all_paths(value, current_path))
     return paths
+
 
 def get_nested_value(obj, path):
     """Get a value from a nested dictionary using dot notation"""
@@ -492,6 +496,8 @@ def compare_json():
     except Exception as e:
         app.logger.error(f"Error in comparison: {str(e)}")  # Add logging
         return jsonify({'error': f'Comparison failed: {str(e)}'}), 500
+
+
 @app.route('/check_static')
 def check_static():
     css_path = os.path.join(app.static_folder, 'css/cdo_json_comparison.css')
@@ -517,6 +523,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('json_comparison')
 
+
 @app.route('/log_excluded_field', methods=['POST'])
 def log_excluded_field():
     data = request.json
@@ -534,6 +541,8 @@ def log_excluded_field():
 @app.route('/machine_readable')
 def machine_readable():
     return render_template('mapping_editor.html')
+
+
 @app.route('/upload_mapping', methods=['POST'])
 def upload_mapping():
     if 'file' not in request.files:
@@ -551,39 +560,173 @@ def upload_mapping():
         return jsonify({'success': True, 'content': xml_content})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 @app.route('/watchdog_results')
 def watchdog_results():
     return render_template('watchdog_results.html')
 
+
 @app.route('/fix_message_comparison')
 def fix_message_comparison():
     return render_template('fix_message_comparison.html')
-'''
-@app.route('/confluence_comparison')
-def confluence_comparison():
-    return render_template('confluence_comparison.html')
 
 
-@app.route('/confluence_comparison')
-def confluence_comparison():
-    return render_template('confluence_comparison.html')
+# NEW FIXML Field Analysis Tool
+@app.route('/fixml_field_analysis')
+def fixml_field_analysis():
+    return render_template('fixml_field_analysis.html')
 
 
-@app.route('/compare_confluence', methods=['POST'])
-def compare_confluence():
-    url1 = request.form.get('url1')
-    url2 = request.form.get('url2')
-
-    if not url1 or not url2:
-        return jsonify({'error': 'Both URLs are required'}), 400
-
+@app.route('/upload_fixml_venues', methods=['POST'])
+def upload_fixml_venues():
     try:
-        comparer = ConfluenceTableComparer()
-        changes = comparer.compare_tables(url1, url2)
-        return jsonify({'changes': changes})
+        # Check if all 4 files are provided
+        venue_files = {}
+        for i in range(1, 5):
+            file_key = f'venue{i}'
+            if file_key not in request.files or request.files[file_key].filename == '':
+                return jsonify({'error': f'Venue {i} file is required'}), 400
+            venue_files[file_key] = request.files[file_key]
+
+        # Get venue names
+        venue_names = {}
+        for i in range(1, 5):
+            name_key = f'venueName{i}'
+            venue_names[f'venue{i}'] = request.form.get(name_key, f'Venue {i}')
+
+        # Process each CSV file
+        venue_data = {}
+        for venue_key, file in venue_files.items():
+            try:
+                df = pd.read_csv(file, keep_default_na=False)
+
+                # Validate required columns
+                required_columns = ['field_name', 'enumValues', 'Presence']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    return jsonify({
+                        'error': f'Missing required columns in {venue_names[venue_key]}: {", ".join(missing_columns)}'
+                    }), 400
+
+                venue_data[venue_key] = {
+                    'name': venue_names[venue_key],
+                    'data': df.to_dict('records')
+                }
+            except Exception as e:
+                return jsonify({
+                    'error': f'Error processing {venue_names[venue_key]}: {str(e)}'
+                }), 400
+
+        # Analyze the data
+        analysis_result = analyze_fixml_venues(venue_data)
+
+        return jsonify(analysis_result)
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-'''
+        app.logger.error(f"Error in upload_fixml_venues: {str(e)}")
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
+
+def analyze_fixml_venues(venue_data):
+    """Analyze FIXML venue data and create matrices"""
+
+    # Collect all unique field names
+    all_fields = set()
+    all_enum_values = set()
+    all_presence_values = set()
+
+    # Field presence matrix data
+    field_matrix = {}
+    enum_matrix = {}
+    presence_matrix = {}
+
+    venues = list(venue_data.keys())
+    venue_names = [venue_data[venue]['name'] for venue in venues]
+
+    # First pass: collect all unique values
+    for venue_key, venue_info in venue_data.items():
+        for row in venue_info['data']:
+            field_name = row['field_name']
+            enum_values = str(row['enumValues']).strip() if row['enumValues'] else ''
+            presence = str(row['Presence']).strip() if row['Presence'] else ''
+
+            all_fields.add(field_name)
+            if enum_values and enum_values != 'nan':
+                # Split enum values if they contain multiple values
+                enum_list = [val.strip() for val in enum_values.split(',') if val.strip()]
+                all_enum_values.update(enum_list)
+            if presence and presence != 'nan':
+                all_presence_values.add(presence)
+
+    # Initialize matrices
+    for field in all_fields:
+        field_matrix[field] = {venue: False for venue in venues}
+
+    for enum_val in all_enum_values:
+        enum_matrix[enum_val] = {venue: [] for venue in venues}
+
+    for presence_val in all_presence_values:
+        presence_matrix[presence_val] = {venue: [] for venue in venues}
+
+    # Second pass: populate matrices
+    for venue_key, venue_info in venue_data.items():
+        for row in venue_info['data']:
+            field_name = row['field_name']
+            enum_values = str(row['enumValues']).strip() if row['enumValues'] else ''
+            presence = str(row['Presence']).strip() if row['Presence'] else ''
+
+            # Mark field as present in this venue
+            field_matrix[field_name][venue_key] = True
+
+            # Process enum values
+            if enum_values and enum_values != 'nan':
+                enum_list = [val.strip() for val in enum_values.split(',') if val.strip()]
+                for enum_val in enum_list:
+                    if enum_val in enum_matrix:
+                        enum_matrix[enum_val][venue_key].append(field_name)
+
+            # Process presence values
+            if presence and presence != 'nan':
+                if presence in presence_matrix:
+                    presence_matrix[presence][venue_key].append(field_name)
+
+    # Create summary statistics
+    field_stats = {}
+    for field in all_fields:
+        present_count = sum(1 for venue in venues if field_matrix[field][venue])
+        field_stats[field] = {
+            'present_in': present_count,
+            'venues': [venue_data[venue]['name'] for venue in venues if field_matrix[field][venue]]
+        }
+
+    # Group fields by presence pattern
+    presence_patterns = defaultdict(list)
+    for field in all_fields:
+        pattern = tuple(field_matrix[field][venue] for venue in venues)
+        presence_patterns[pattern].append(field)
+
+    return {
+        'success': True,
+        'venue_names': venue_names,
+        'venues': venues,
+        'total_fields': len(all_fields),
+        'total_enum_values': len(all_enum_values),
+        'total_presence_values': len(all_presence_values),
+        'field_matrix': field_matrix,
+        'enum_matrix': enum_matrix,
+        'presence_matrix': presence_matrix,
+        'field_stats': field_stats,
+        'presence_patterns': {
+            str(pattern): fields for pattern, fields in presence_patterns.items()
+        },
+        'summary': {
+            'fields_in_all_venues': len([f for f, stats in field_stats.items() if stats['present_in'] == 4]),
+            'fields_in_one_venue': len([f for f, stats in field_stats.items() if stats['present_in'] == 1]),
+            'fields_in_multiple_venues': len([f for f, stats in field_stats.items() if 1 < stats['present_in'] < 4])
+        }
+    }
+
 
 if __name__ == '__main__':
     app.run(debug=True)
