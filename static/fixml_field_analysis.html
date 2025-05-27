@@ -181,10 +181,90 @@
                 { 'Metric': 'Single Venue', 'Value': analysisData.summary?.fields_in_one_venue },
             ] : [];
 
-            const fieldPresenceMatrix = analysisData ? Object.entries(analysisData.field_matrix).map(([field, presence]) => ({
-                'Field Name': field,
-                ...analysisData.venue_names.reduce((acc, name, idx) => ({ ...acc, [name]: presence[`venue${idx + 1}`] ? 'Yes' : 'No' }), {})
-            })) : [];
+         // Create a more detailed field presence matrix with enum values and presence
+            const fieldPresenceMatrix = [];
+
+            if (analysisData) {
+                // First, we need to reorganize the data by field
+                const fieldDetails = {};
+
+                // Process each venue's data
+                Object.entries(analysisData.field_matrix).forEach(([field, presence]) => {
+                    fieldDetails[field] = {
+                        fieldName: field,
+                        venues: {}
+                    };
+
+                    // Initialize each venue
+                    analysisData.venues.forEach(venue => {
+                        fieldDetails[field].venues[venue] = {
+                            present: presence[venue],
+                            enumValues: '',
+                            presence: ''
+                        };
+                    });
+                });
+
+                // Now populate enum values and presence from the matrix data
+                Object.entries(analysisData.enum_matrix).forEach(([enumVal, venues]) => {
+                    Object.entries(venues).forEach(([venue, fields]) => {
+                        fields.forEach(field => {
+                            if (fieldDetails[field] && fieldDetails[field].venues[venue]) {
+                                const current = fieldDetails[field].venues[venue].enumValues;
+                                fieldDetails[field].venues[venue].enumValues = current ? `${current}, ${enumVal}` : enumVal;
+                            }
+                        });
+                    });
+                });
+
+                Object.entries(analysisData.presence_matrix).forEach(([presenceVal, venues]) => {
+                    Object.entries(venues).forEach(([venue, fields]) => {
+                        fields.forEach(field => {
+                            if (fieldDetails[field] && fieldDetails[field].venues[venue]) {
+                                fieldDetails[field].venues[venue].presence = presenceVal;
+                            }
+                        });
+                    });
+                });
+
+                // Convert to array format for display with 3 rows per field
+                Object.values(fieldDetails).forEach(field => {
+                    // Row 1: Is Field Supported
+                    const supportedRow = {
+                        'Field Name': field.fieldName,
+                        'Row Type': 'Is Field Supported'
+                    };
+                    analysisData.venue_names.forEach((name, idx) => {
+                        const venue = `venue${idx + 1}`;
+                        supportedRow[name] = field.venues[venue].present ? 'Yes' : 'No';
+                    });
+                    fieldPresenceMatrix.push(supportedRow);
+
+                    // Row 2: Presence
+                    const presenceRow = {
+                        'Field Name': '',
+                        'Row Type': 'Presence'
+                    };
+                    analysisData.venue_names.forEach((name, idx) => {
+                        const venue = `venue${idx + 1}`;
+                        presenceRow[name] = field.venues[venue].present ?
+                            (field.venues[venue].presence || '-') : '-';
+                    });
+                    fieldPresenceMatrix.push(presenceRow);
+
+                    // Row 3: Supported Values
+                    const valuesRow = {
+                        'Field Name': '',
+                        'Row Type': 'Supported Values'
+                    };
+                    analysisData.venue_names.forEach((name, idx) => {
+                        const venue = `venue${idx + 1}`;
+                        valuesRow[name] = field.venues[venue].present ?
+                            (field.venues[venue].enumValues || '-') : '-';
+                    });
+                    fieldPresenceMatrix.push(valuesRow);
+                });
+            }
 
             return (
                 <div className="container mx-auto">
