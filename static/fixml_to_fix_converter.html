@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIXML to FIX Tag Converter</title>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.22.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #root {
+            padding: 20px;
+        }
+        .highlight {
+            background-color: #fef3c7;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Common FIXML to FIX Tag mappings based on standard FIX protocol and CME data dictionary
+        const FIXML_TO_FIX_MAPPINGS = {
+            // Trade Capture Report fields
+            'TrdCaptRpt/@BizDt': '715',
+            'TrdCaptRpt/@Clrd': '1832',
+            'TrdCaptRpt/@DealID': '20011',
+            'TrdCaptRpt/@DiffPx': '10033',
+            'TrdCaptRpt/@DiffPxTyp': '10024',
+            'TrdCaptRpt/@ExecID': '17',
+            'TrdCaptRpt/@ExecID2': '527',
+            'TrdCaptRpt/@LastMkt': '30',
+            'TrdCaptRpt/@LastPx': '31',
+            'TrdCaptRpt/@LastPx2': '20064',
+            'TrdCaptRpt/@LastQty': '32',
+            'TrdCaptRpt/@MtchId': '880',
+            'TrdCaptRpt/@RptID': '571',
+            'TrdCaptRpt/@SecTyp': '167',
+            'TrdCaptRpt/@TrdDt': '75',
+            'TrdCaptRpt/@TrdID': '1003',
+            'TrdCaptRpt/@TrdID2': '1040',
+            'TrdCaptRpt/@TxnTm': '60',
+            'TrdCaptRpt/@LastUpdateTm': '779',
+            'TrdCaptRpt/@Ccy': '15',
+
+            // Common attribute mappings (without TrdCaptRpt prefix)
+            '@BizDt': '715',
+            '@Clrd': '1832',
+            '@DealID': '20011',
+            '@DiffPx': '10033',
+            '@DiffPxTyp': '10024',
+            '@ExecID': '17',
+            '@ExecID2': '527',
+            '@LastMkt': '30',
+            '@LastPx': '31',
+            '@LastPx2': '20064',
+            '@LastQty': '32',
+            '@MtchId': '880',
+            '@RptID': '571',
+            '@SecTyp': '167',
+            '@TrdDt': '75',
+            '@TrdID': '1003',
+            '@TrdID2': '1040',
+            '@TxnTm': '60',
+            '@LastUpdateTm': '779',
+            '@Ccy': '15',
+
+            // Additional common fields
+            'TrdCaptRpt/@TradeReportID': '571',
+            'TrdCaptRpt/@TradeID': '1003',
+            'TrdCaptRpt/@Symbol': '55',
+            'TrdCaptRpt/@Side': '54',
+            'TrdCaptRpt/@OrderID': '37',
+            'TrdCaptRpt/@ClOrdID': '11',
+            'TrdCaptRpt/@TransactTime': '60',
+            'TrdCaptRpt/@TradeDate': '75',
+            'TrdCaptRpt/@SettlDate': '64',
+            'TrdCaptRpt/@Currency': '15',
+            'TrdCaptRpt/@Price': '44',
+            'TrdCaptRpt/@Quantity': '53',
+            'TrdCaptRpt/@GrossTradeAmt': '381',
+            'TrdCaptRpt/@NetMoney': '118'
+        };
+
+        const App = () => {
+            const [inputText, setInputText] = useState('');
+            const [outputText, setOutputText] = useState('');
+            const [unmappedFields, setUnmappedFields] = useState([]);
+            const [customMappings, setCustomMappings] = useState({});
+            const [showCustomForm, setShowCustomForm] = useState(false);
+            const [customField, setCustomField] = useState('');
+            const [customTag, setCustomTag] = useState('');
+            const [conversionMode, setConversionMode] = useState('fixmlToTag'); // or 'tagToFixml'
+
+            const convertFields = () => {
+                const lines = inputText.split('\n');
+                const results = [];
+                const unmapped = [];
+
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) {
+                        results.push('');
+                        return;
+                    }
+
+                    if (conversionMode === 'fixmlToTag') {
+                        // Try to find mapping
+                        let fixTag = FIXML_TO_FIX_MAPPINGS[trimmedLine] || customMappings[trimmedLine];
+
+                        // If not found, try without TrdCaptRpt prefix
+                        if (!fixTag && trimmedLine.startsWith('TrdCaptRpt/')) {
+                            const withoutPrefix = trimmedLine.replace('TrdCaptRpt/', '');
+                            fixTag = FIXML_TO_FIX_MAPPINGS[withoutPrefix] || customMappings[withoutPrefix];
+                        }
+
+                        // If still not found, try adding @ if missing
+                        if (!fixTag && !trimmedLine.includes('@')) {
+                            const withAt = '@' + trimmedLine;
+                            fixTag = FIXML_TO_FIX_MAPPINGS[withAt] || customMappings[withAt];
+                        }
+
+                        if (fixTag) {
+                            results.push(`${trimmedLine} -> ${fixTag}`);
+                        } else {
+                            results.push(`${trimmedLine} -> NOT FOUND`);
+                            if (!unmapped.includes(trimmedLine)) {
+                                unmapped.push(trimmedLine);
+                            }
+                        }
+                    } else {
+                        // Reverse lookup: FIX tag to FIXML
+                        const allMappings = {...FIXML_TO_FIX_MAPPINGS, ...customMappings};
+                        const fixmlField = Object.entries(allMappings).find(([fixml, tag]) => tag === trimmedLine);
+
+                        if (fixmlField) {
+                            results.push(`${trimmedLine} -> ${fixmlField[0]}`);
+                        } else {
+                            results.push(`${trimmedLine} -> NOT FOUND`);
+                            if (!unmapped.includes(trimmedLine)) {
+                                unmapped.push(trimmedLine);
+                            }
+                        }
+                    }
+                });
+
+                setOutputText(results.join('\n'));
+                setUnmappedFields(unmapped);
+            };
+
+            const addCustomMapping = () => {
+                if (customField && customTag) {
+                    setCustomMappings({...customMappings, [customField]: customTag});
+                    setCustomField('');
+                    setCustomTag('');
+                    setShowCustomForm(false);
+                    // Re-run conversion with new mapping
+                    setTimeout(convertFields, 100);
+                }
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const text = e.target.result;
+                        // Extract field names from CSV
+                        const lines = text.split('\n');
+                        const fields = [];
+                        lines.forEach((line, idx) => {
+                            if (idx > 0 && line.trim()) { // Skip header
+                                const parts = line.split(',');
+                                if (parts[0]) {
+                                    fields.push(parts[0].trim());
+                                }
+                            }
+                        });
+                        setInputText(fields.join('\n'));
+                    };
+                    reader.readAsText(file);
+                }
+            };
+
+            const exportResults = () => {
+                const blob = new Blob([outputText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'fixml_to_fix_mappings.txt';
+                a.click();
+            };
+
+            return (
+                <div className="container mx-auto">
+                    <h1 className="text-3xl font-bold mb-4">FIXML to FIX Tag Converter</h1>
+                    <p className="mb-4">Convert FIXML field names to FIX tag numbers or vice versa. Based on standard FIX protocol and CME data dictionary.</p>
+
+                    <div className="mb-4">
+                        <label className="block text-lg font-semibold mb-2">Conversion Mode:</label>
+                        <select
+                            value={conversionMode}
+                            onChange={(e) => setConversionMode(e.target.value)}
+                            className="p-2 border rounded"
+                        >
+                            <option value="fixmlToTag">FIXML to FIX Tag</option>
+                            <option value="tagToFixml">FIX Tag to FIXML</option>
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-lg font-semibold mb-2">
+                                Input {conversionMode === 'fixmlToTag' ? 'FIXML Fields' : 'FIX Tags'} (one per line):
+                            </label>
+                            <textarea
+                                value={inputText}
+                                onChange={(e) => setInputText(e.target.value)}
+                                className="w-full h-64 p-2 border rounded font-mono text-sm"
+                                placeholder={conversionMode === 'fixmlToTag' ?
+                                    "TrdCaptRpt/@BizDt\n@Clrd\nDealID\n..." :
+                                    "715\n1832\n20011\n..."}
+                            />
+                            <div className="mt-2">
+                                <label className="block text-sm mb-1">Or upload CSV file:</label>
+                                <input type="file" accept=".csv" onChange={handleFileUpload} className="text-sm" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-lg font-semibold mb-2">Output Mappings:</label>
+                            <textarea
+                                value={outputText}
+                                readOnly
+                                className="w-full h-64 p-2 border rounded bg-gray-50 font-mono text-sm"
+                            />
+                            <button
+                                onClick={exportResults}
+                                className="mt-2 bg-gray-500 text-white px-4 py-2 rounded text-sm"
+                                disabled={!outputText}
+                            >
+                                Export Results
+                            </button>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={convertFields}
+                        className="bg-blue-500 text-white px-6 py-2 rounded"
+                    >
+                        Convert
+                    </button>
+
+                    {unmappedFields.length > 0 && (
+                        <div className="mt-6 p-4 border border-yellow-400 bg-yellow-50 rounded">
+                            <h3 className="text-lg font-semibold mb-2">Unmapped Fields ({unmappedFields.length}):</h3>
+                            <ul className="list-disc list-inside mb-3">
+                                {unmappedFields.map((field, idx) => (
+                                    <li key={idx} className="text-sm">{field}</li>
+                                ))}
+                            </ul>
+                            <button
+                                onClick={() => setShowCustomForm(!showCustomForm)}
+                                className="bg-yellow-500 text-white px-4 py-1 rounded text-sm"
+                            >
+                                Add Custom Mappings
+                            </button>
+                        </div>
+                    )}
+
+                    {showCustomForm && (
+                        <div className="mt-4 p-4 border rounded bg-gray-50">
+                            <h3 className="text-lg font-semibold mb-2">Add Custom Mapping:</h3>
+                            <div className="flex gap-2 items-end">
+                                <div className="flex-1">
+                                    <label className="block text-sm mb-1">FIXML Field:</label>
+                                    <input
+                                        type="text"
+                                        value={customField}
+                                        onChange={(e) => setCustomField(e.target.value)}
+                                        className="w-full p-2 border rounded"
+                                        placeholder="e.g., TrdCaptRpt/@CustomField"
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-sm mb-1">FIX Tag:</label>
+                                    <input
+                                        type="text"
+                                        value={customTag}
+                                        onChange={(e) => setCustomTag(e.target.value)}
+                                        className="w-full p-2 border rounded"
+                                        placeholder="e.g., 9999"
+                                    />
+                                </div>
+                                <button
+                                    onClick={addCustomMapping}
+                                    className="bg-green-500 text-white px-4 py-2 rounded"
+                                >
+                                    Add
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {Object.keys(customMappings).length > 0 && (
+                        <div className="mt-4 p-4 border rounded">
+                            <h3 className="text-lg font-semibold mb-2">Custom Mappings:</h3>
+                            <ul className="text-sm">
+                                {Object.entries(customMappings).map(([field, tag]) => (
+                                    <li key={field}>{field} -> {tag}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    <div className="mt-8 p-4 bg-blue-50 rounded">
+                        <h3 className="text-lg font-semibold mb-2">Reference Links:</h3>
+                        <ul className="text-sm">
+                            <li>• <a href="https://fiximate.fixtrading.org/en/FIX.Latest/fields_sorted_by_tagnum.html" target="_blank" className="text-blue-600 underline">FIX Protocol Field Reference</a></li>
+                            <li>• <a href="https://www.cmegroup.com/stp/files/cme-stp-fix-data-dictionary.xml" target="_blank" className="text-blue-600 underline">CME STP FIX Data Dictionary</a></li>
+                        </ul>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

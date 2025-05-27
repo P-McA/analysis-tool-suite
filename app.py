@@ -749,6 +749,10 @@ def analyze_fixml_venues(venue_data):
 def debug_fixml():
     return render_template('debug_fixml_analysis.html')
 
+@app.route('/fixml_to_fix_converter')
+def fixml_to_fix_converter():
+    return send_from_directory('static', 'fixml_to_fix_converter.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
